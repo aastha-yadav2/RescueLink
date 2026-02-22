@@ -64,6 +64,7 @@ const HighlightedIcon = L.icon({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [35, 56],
   iconAnchor: [17, 56],
+  className: 'selected-marker-pulse'
 });
 
 const UserIcon = L.icon({
@@ -78,6 +79,7 @@ const UserPinIcon = L.icon({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [30, 48],
   iconAnchor: [15, 48],
+  className: 'user-pin-pulse'
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
