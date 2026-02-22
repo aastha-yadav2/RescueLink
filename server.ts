@@ -11,17 +11,18 @@ async function startServer() {
 
   const PORT = 3000;
 
-  // Store active alerts and history in memory
+  // Store active alerts, history, and active users in memory
   let alerts: any[] = [];
   let history: any[] = [];
+  let activeUsers: Record<string, { location: string, lastSeen: string }> = {};
 
   wss.on("connection", (ws) => {
     console.log("Client connected");
 
-    // Send current alerts and history to the new client
+    // Send current alerts, history, and active users to the new client
     ws.send(JSON.stringify({ 
       type: "INIT_DATA", 
-      payload: { alerts, history } 
+      payload: { alerts, history, activeUsers } 
     }));
 
     ws.on("message", (data) => {
@@ -108,24 +109,31 @@ async function startServer() {
 
         if (message.type === "LOCATION_UPDATE") {
           const { userId, location } = message.payload;
+          
+          // Update active users
+          activeUsers[userId] = { location, lastSeen: new Date().toISOString() };
+
           // Update any active alerts for this user
-          let updated = false;
+          let alertUpdated = false;
           alerts = alerts.map(a => {
             if (a.userId === userId) {
-              updated = true;
+              alertUpdated = true;
               return { ...a, location };
             }
             return a;
           });
           
-          if (updated) {
-            const broadcastData = JSON.stringify({ type: "USER_LOCATION_UPDATED", payload: { userId, location } });
-            wss.clients.forEach((client) => {
-              if (client.readyState === WebSocket.OPEN) {
-                client.send(broadcastData);
-              }
-            });
-          }
+          // Broadcast location update
+          const broadcastData = JSON.stringify({ 
+            type: "USER_LOCATION_UPDATED", 
+            payload: { userId, location, activeUsers } 
+          });
+          
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(broadcastData);
+            }
+          });
         }
       } catch (err) {
         console.error("Error processing message:", err);
