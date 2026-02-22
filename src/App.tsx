@@ -73,6 +73,13 @@ const UserIcon = L.icon({
   iconAnchor: [10, 32],
 });
 
+const UserPinIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [30, 48],
+  iconAnchor: [15, 48],
+});
+
 L.Marker.prototype.options.icon = DefaultIcon;
 
 // --- AI Service ---
@@ -191,6 +198,15 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
       recognitionRef.current?.stop();
     } else {
       if (recognitionRef.current) {
+        // Request a fresh location fix when starting voice capture
+        if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition((pos) => {
+            const locString = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
+            setLocation(locString);
+            setCoords([pos.coords.latitude, pos.coords.longitude]);
+            onLocationUpdate(locString);
+          });
+        }
         recognitionRef.current.start();
       } else {
         setStatus("Voice recognition not supported in this browser.");
@@ -253,12 +269,13 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => handleEmergency()}
+          aria-label="Trigger Emergency Alert"
           className={cn(
             "relative w-72 h-72 rounded-full bg-brand-accent flex flex-col items-center justify-center text-white shadow-2xl transition-all duration-500",
             isTriggered ? "emergency-pulse scale-110" : "hover:bg-red-500"
           )}
         >
-          <AlertCircle size={80} className="mb-2" />
+          <AlertCircle size={80} className="mb-2" aria-hidden="true" />
           <span className="text-3xl font-black uppercase tracking-widest">Emergency</span>
           <span className="text-sm font-medium opacity-80">Press for Help</span>
         </motion.button>
@@ -268,12 +285,14 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         <div className="flex gap-4">
           <button 
             onClick={toggleVoiceTrigger}
+            aria-label={isListening ? "Stop Voice Recognition" : "Start Voice Recognition"}
+            aria-pressed={isListening}
             className={cn(
               "p-5 rounded-full transition-all duration-300 shadow-lg",
               isListening ? "bg-red-500 text-white animate-pulse" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
             )}
           >
-            <Mic size={32} />
+            <Mic size={32} aria-hidden="true" />
           </button>
         </div>
 
@@ -315,7 +334,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
                 <TileLayer
                   url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                 />
-                <Marker position={coords} />
+                <Marker position={coords} icon={UserPinIcon} />
                 <MapUpdater coords={coords} />
               </MapContainer>
             ) : (
@@ -430,25 +449,31 @@ const AdminDashboard = ({
           </p>
         </div>
         <div className="flex gap-4">
-          <div className="flex bg-slate-900/50 p-1.5 rounded-2xl border border-white/5">
+          <div className="flex bg-slate-900/50 p-1.5 rounded-2xl border border-white/5" role="tablist">
             <button 
               onClick={() => setActiveTab('active')}
+              role="tab"
+              aria-selected={activeTab === 'active'}
+              aria-controls="alerts-panel"
               className={cn(
                 "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
                 activeTab === 'active' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
               )}
             >
-              <Activity size={14} />
+              <Activity size={14} aria-hidden="true" />
               Active
             </button>
             <button 
               onClick={() => setActiveTab('history')}
+              role="tab"
+              aria-selected={activeTab === 'history'}
+              aria-controls="alerts-panel"
               className={cn(
                 "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
                 activeTab === 'history' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
               )}
             >
-              <History size={14} />
+              <History size={14} aria-hidden="true" />
               History
             </button>
           </div>
@@ -482,11 +507,12 @@ const AdminDashboard = ({
           <div className="flex flex-col gap-3 px-2">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Severity:</span>
-              <div className="flex gap-1">
+              <div className="flex gap-1" role="group" aria-label="Filter by severity">
                 {['All', 'Critical', 'Medium', 'Low'].map((s) => (
                   <button
                     key={s}
                     onClick={() => setSeverityFilter(s as any)}
+                    aria-pressed={severityFilter === s}
                     className={cn(
                       "px-2 py-1 rounded-md text-[10px] font-bold transition-all border",
                       severityFilter === s 
@@ -501,11 +527,12 @@ const AdminDashboard = ({
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Status:</span>
-              <div className="flex gap-1">
+              <div className="flex gap-1" role="group" aria-label="Filter by status">
                 {['All', 'Accepted', 'Pending'].map((s) => (
                   <button
                     key={s}
                     onClick={() => setStatusFilter(s as any)}
+                    aria-pressed={statusFilter === s}
                     className={cn(
                       "px-2 py-1 rounded-md text-[10px] font-bold transition-all border",
                       statusFilter === s 
@@ -520,7 +547,7 @@ const AdminDashboard = ({
             </div>
           </div>
           
-          <div className="space-y-4 overflow-y-auto max-h-[700px] pr-2 custom-scrollbar">
+          <div id="alerts-panel" role="tabpanel" className="space-y-4 overflow-y-auto max-h-[700px] pr-2 custom-scrollbar">
             <AnimatePresence mode="popLayout">
               {filteredAlerts.length === 0 ? (
                 <motion.div 
@@ -528,7 +555,7 @@ const AdminDashboard = ({
                   animate={{ opacity: 1 }}
                   className="glass rounded-3xl p-12 text-center border-dashed border-2 border-white/5"
                 >
-                  <Shield size={64} className="mx-auto mb-4 text-slate-800" />
+                  <Shield size={64} className="mx-auto mb-4 text-slate-800" aria-hidden="true" />
                   <p className="text-slate-500 font-bold">
                     {activeTab === 'active' ? 'No matching alerts' : 'No history records'}
                   </p>
@@ -542,6 +569,9 @@ const AdminDashboard = ({
                     animate={{ x: 0, opacity: 1 }}
                     exit={{ x: 20, opacity: 0 }}
                     onClick={() => setSelectedAlert(alert)}
+                    role="button"
+                    aria-pressed={selectedAlert?.id === alert.id}
+                    aria-label={`Alert from ${alert.userId} at ${alert.location}`}
                     className={cn(
                       "glass rounded-3xl p-5 transition-all cursor-pointer border-l-4 group",
                       selectedAlert?.id === alert.id ? "ring-2 ring-brand-accent/50" : "hover:bg-white/5",
@@ -604,24 +634,27 @@ const AdminDashboard = ({
                           <>
                             <button 
                               onClick={(e) => { e.stopPropagation(); onAccept(alert.id); }}
+                              aria-label={`Accept alert ${alert.id}`}
                               className="flex-1 py-2.5 bg-brand-accent hover:bg-red-500 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-500/20"
                             >
-                              <CheckCircle2 size={14} />
+                              <CheckCircle2 size={14} aria-hidden="true" />
                               ACCEPT
                             </button>
                             <button 
                               onClick={(e) => { e.stopPropagation(); onReject(alert.id); }}
+                              aria-label={`Reject alert ${alert.id}`}
                               className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl transition-all"
                             >
-                              <XCircle size={18} />
+                              <XCircle size={18} aria-hidden="true" />
                             </button>
                           </>
                         ) : (
                           <button 
                             onClick={(e) => { e.stopPropagation(); onResolve(alert.id); }}
+                            aria-label={`Resolve alert ${alert.id}`}
                             className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
                           >
-                            <Archive size={14} />
+                            <Archive size={14} aria-hidden="true" />
                             RESOLVE INCIDENT
                           </button>
                         )
@@ -684,6 +717,9 @@ const AdminDashboard = ({
                       position={[parts[0], parts[1]]}
                       icon={isSelected ? HighlightedIcon : DefaultIcon}
                       zIndexOffset={isSelected ? 1000 : 0}
+                      eventHandlers={{
+                        click: () => setSelectedAlert(alert)
+                      }}
                     >
                       <Popup>
                         <div className="text-brand-dark p-1">
@@ -748,6 +784,43 @@ const AdminDashboard = ({
                       {selectedAlert.aiReasoning || "Analysis pending..."}
                     </p>
                   </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/5 flex gap-4">
+                  {!selectedAlert.resolved ? (
+                    !selectedAlert.accepted ? (
+                      <>
+                        <button 
+                          onClick={() => onAccept(selectedAlert.id)}
+                          aria-label={`Accept alert ${selectedAlert.id}`}
+                          className="flex-1 py-3 bg-brand-accent hover:bg-red-500 text-white rounded-2xl text-sm font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-500/20"
+                        >
+                          <CheckCircle2 size={18} aria-hidden="true" />
+                          ACCEPT INCIDENT
+                        </button>
+                        <button 
+                          onClick={() => onReject(selectedAlert.id)}
+                          aria-label={`Reject alert ${selectedAlert.id}`}
+                          className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-2xl transition-all font-black text-sm"
+                        >
+                          REJECT
+                        </button>
+                      </>
+                    ) : (
+                      <button 
+                        onClick={() => onResolve(selectedAlert.id)}
+                        aria-label={`Resolve alert ${selectedAlert.id}`}
+                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                      >
+                        <Archive size={18} aria-hidden="true" />
+                        RESOLVE INCIDENT
+                      </button>
+                    )
+                  ) : (
+                    <div className="w-full py-3 bg-slate-800/50 text-slate-500 rounded-2xl text-sm font-black flex items-center justify-center gap-2 border border-white/5 italic">
+                      INCIDENT ARCHIVED
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ) : (
@@ -862,25 +935,29 @@ export default function App() {
             </div>
           </div>
           
-          <div className="flex bg-slate-900/50 p-1.5 rounded-2xl border border-white/5">
+          <div className="flex bg-slate-900/50 p-1.5 rounded-2xl border border-white/5" role="tablist">
             <button 
               onClick={() => setView('user')}
+              role="tab"
+              aria-selected={view === 'user'}
               className={cn(
                 "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
                 view === 'user' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
               )}
             >
-              <User size={14} />
+              <User size={14} aria-hidden="true" />
               User Panel
             </button>
             <button 
               onClick={() => setView('admin')}
+              role="tab"
+              aria-selected={view === 'admin'}
               className={cn(
                 "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
                 view === 'admin' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
               )}
             >
-              <LayoutDashboard size={14} />
+              <LayoutDashboard size={14} aria-hidden="true" />
               Admin Hub
             </button>
           </div>
