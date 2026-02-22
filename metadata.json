@@ -1,0 +1,5 @@
+{
+  "name": "RescueLink AI",
+  "description": "AI-powered emergency response platform with real-time urgency classification and live mapping.",
+  "requestFramePermissions": ["microphone", "geolocation"]
+}
