@@ -609,44 +609,49 @@ const AdminDashboard = ({
         {/* Map & Details */}
         <div className="xl:col-span-8 space-y-6">
           <div className="glass rounded-[2.5rem] h-[500px] relative overflow-hidden">
-            <MapContainer 
-              center={[34.0522, -118.2437]} 
-              zoom={13} 
-              style={{ height: '100%', width: '100%' }}
-              zoomControl={false}
-            >
-              <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              />
-              <MarkerClusterGroup
-                chunkedLoading
-                maxClusterRadius={50}
-                showCoverageOnHover={false}
-              >
-                {filteredAlerts.map(alert => {
-                  const parts = alert.location.split(',').map(p => parseFloat(p.trim()));
-                  if (parts.length !== 2) return null;
-                  const isSelected = selectedAlert?.id === alert.id;
-                  return (
-                    <Marker 
-                      key={alert.id} 
-                      position={[parts[0], parts[1]]}
-                      icon={isSelected ? HighlightedIcon : DefaultIcon}
-                      zIndexOffset={isSelected ? 1000 : 0}
-                    >
-                      <Popup>
-                        <div className="text-brand-dark p-1">
-                          <p className="font-bold">{alert.userId}</p>
-                          <p className="text-xs">{alert.status} Urgency</p>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  );
-                })}
-              </MarkerClusterGroup>
-              <MapUpdater coords={alertCoords} />
-            </MapContainer>
+           <MapContainer
+  center={alertCoords || [20.5937, 78.9629]} // India default center
+  zoom={alertCoords ? 15 : 5}
+  style={{ height: '100%', width: '100%' }}
+  zoomControl={false}
+>
+  <TileLayer
+    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+    attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+  />
+
+  <MarkerClusterGroup
+    chunkedLoading
+    maxClusterRadius={50}
+    showCoverageOnHover={false}
+  >
+    {filteredAlerts.map(alert => {
+      const parts = alert.location.split(',').map(p => parseFloat(p.trim()));
+      if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+
+      const isSelected = selectedAlert?.id === alert.id;
+
+      return (
+        <Marker
+          key={alert.id}
+          position={[parts[0], parts[1]]}
+          icon={isSelected ? HighlightedIcon : DefaultIcon}
+          zIndexOffset={isSelected ? 1000 : 0}
+        >
+          <Popup>
+            <div className="text-brand-dark p-1">
+              <p className="font-bold">{alert.userId}</p>
+              <p className="text-xs">{alert.status} Urgency</p>
+              <p className="text-[10px] opacity-70">{alert.location}</p>
+            </div>
+          </Popup>
+        </Marker>
+      );
+    })}
+  </MarkerClusterGroup>
+
+  <MapUpdater coords={alertCoords} />
+</MapContainer>
             
             {/* Map Overlay UI */}
             <div className="absolute top-6 right-6 z-[1000] flex flex-col gap-2">
