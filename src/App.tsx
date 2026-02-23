@@ -267,7 +267,10 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' }, 
+        audio: true 
+      });
       streamRef.current = stream;
       
       const recorder = new MediaRecorder(stream);
@@ -1243,50 +1246,52 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="pb-24">
-        <AnimatePresence mode="wait">
-          {view === 'auth' ? (
-            <motion.div
-              key="auth"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.02 }}
-              transition={{ type: "spring", damping: 20, stiffness: 100 }}
-            >
-              <AuthScreen onLogin={(user) => {
-                setCurrentUser(user);
-                setView('user');
-              }} />
-            </motion.div>
-          ) : view === 'user' ? (
-            <motion.div
-              key="user"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.02 }}
-              transition={{ type: "spring", damping: 20, stiffness: 100 }}
-            >
-              <UserScreen onTrigger={triggerAlert} onLocationUpdate={updateLocation} />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="admin"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.02 }}
-              transition={{ type: "spring", damping: 20, stiffness: 100 }}
-            >
-              <AdminDashboard 
-                alerts={alerts} 
-                history={history} 
-                activeUsers={activeUsers}
-                onAccept={acceptAlert} 
-                onReject={rejectAlert} 
-                onResolve={resolveAlert}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <main className="pb-24 pt-20 px-4">
+        <div className={cn("mx-auto", view === 'admin' ? "max-w-none" : "max-w-md")}>
+          <AnimatePresence mode="wait">
+            {view === 'auth' ? (
+              <motion.div
+                key="auth"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.02 }}
+                transition={{ type: "spring", damping: 20, stiffness: 100 }}
+              >
+                <AuthScreen onLogin={(user) => {
+                  setCurrentUser(user);
+                  setView('user');
+                }} />
+              </motion.div>
+            ) : view === 'user' ? (
+              <motion.div
+                key="user"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.02 }}
+                transition={{ type: "spring", damping: 20, stiffness: 100 }}
+              >
+                <UserScreen onTrigger={triggerAlert} onLocationUpdate={updateLocation} />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="admin"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.02 }}
+                transition={{ type: "spring", damping: 20, stiffness: 100 }}
+              >
+                <AdminDashboard 
+                  alerts={alerts} 
+                  history={history} 
+                  activeUsers={activeUsers}
+                  onAccept={acceptAlert} 
+                  onReject={rejectAlert} 
+                  onResolve={resolveAlert}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </main>
 
       {/* Real-time Notification */}
