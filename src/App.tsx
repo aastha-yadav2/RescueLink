@@ -90,23 +90,61 @@ const classifyUrgency = async (transcript: string) => {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Analyze this emergency transcript and classify urgency as Critical, Medium, or Low. Provide a brief reasoning. Transcript: "${transcript}"`,
+      contents: `You are an AI Emergency Severity Analyzer used in a real-time rescue system.
+
+Your job is to analyze a spoken emergency transcript from a user and determine how serious the situation is.
+
+Analyze the sentence carefully and classify the emergency into ONE of these levels:
+- Critical → Life-threatening, severe injury, fire, accident, violence, unconscious person, medical emergency
+- Medium → Possible risk but not life-threatening yet
+- Low → Safe situation, testing, or unclear request
+
+Instructions:
+1. Understand context, tone, and meaning.
+2. Detect urgency signals such as panic words, distress tone, danger keywords.
+3. Ignore jokes or testing phrases.
+4. If uncertain, choose Medium.
+5. If strong danger signals appear, choose Critical.
+
+Also generate a short reasoning explaining WHY you chose that severity.
+
+Return ONLY valid JSON in this format:
+{
+  "severity": "Critical | Medium | Low",
+  "confidence": "0-100%",
+  "keywords_detected": ["word1","word2"],
+  "reasoning": "short explanation"
+}
+
+Transcript to analyze:
+"${transcript}"`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            urgency: { type: Type.STRING, description: "Critical, Medium, or Low" },
-            reasoning: { type: Type.STRING, description: "Brief explanation" }
+            severity: { type: Type.STRING, description: "Critical, Medium, or Low" },
+            confidence: { type: Type.STRING, description: "0-100%" },
+            keywords_detected: { 
+              type: Type.ARRAY, 
+              items: { type: Type.STRING },
+              description: "List of detected danger keywords"
+            },
+            reasoning: { type: Type.STRING, description: "Short explanation" }
           },
-          required: ["urgency", "reasoning"]
+          required: ["severity", "confidence", "keywords_detected", "reasoning"]
         }
       }
     });
     return JSON.parse(response.text);
   } catch (error) {
     console.error("AI Classification failed:", error);
-    return { urgency: "Critical", reasoning: "Defaulted to Critical due to analysis error." };
+    return { 
+      severity: "Critical", 
+      confidence: "0%", 
+      keywords_detected: [], 
+      reasoning: "Defaulted to Critical due to analysis error." 
+    };
   }
 };
 
@@ -132,7 +170,12 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [status, setStatus] = useState<string>("System Ready");
   const [isTriggered, setIsTriggered] = useState(false);
-  const [aiResult, setAiResult] = useState<{ urgency: string, reasoning: string } | null>(null);
+  const [aiResult, setAiResult] = useState<{ 
+    severity: string, 
+    confidence: string, 
+    keywords_detected: string[], 
+    reasoning: string 
+  } | null>(null);
   const [transcript, setTranscript] = useState("");
   const watchIdRef = useRef<number | null>(null);
 
@@ -230,7 +273,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     onTrigger({
       location,
       transcript: finalTranscript,
-      urgency: classification.urgency,
+      urgency: classification.severity,
       aiReasoning: classification.reasoning
     });
 
@@ -331,8 +374,20 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-400">Classification:</span>
-                  <StatusBadge status={aiResult.urgency as any} />
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-500">{aiResult.confidence} Conf.</span>
+                    <StatusBadge status={aiResult.severity as any} />
+                  </div>
                 </div>
+                {aiResult.keywords_detected.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {aiResult.keywords_detected.map((kw, i) => (
+                      <span key={i} className="px-1.5 py-0.5 bg-white/5 rounded text-[9px] text-slate-400 border border-white/5 uppercase tracking-wider">
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <p className="text-sm text-slate-300 italic">"{transcript}"</p>
                 <p className="text-xs text-slate-500 leading-relaxed">{aiResult.reasoning}</p>
               </div>
