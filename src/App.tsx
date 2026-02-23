@@ -255,31 +255,49 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         <p className="text-slate-400 max-w-xs mx-auto">Intelligent Emergency Response at your fingertips.</p>
       </div>
 
-      <div className="relative">
-        <AnimatePresence>
-          {isTriggered && (
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1.2, opacity: 1 }}
-              exit={{ scale: 1.5, opacity: 0 }}
-              className="absolute inset-0 bg-brand-accent rounded-full blur-3xl opacity-20"
-            />
-          )}
-        </AnimatePresence>
-        
+      <div className="relative flex flex-col items-center gap-8">
+        <div className="relative">
+          <AnimatePresence>
+            {isTriggered && (
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1.2, opacity: 1 }}
+                exit={{ scale: 1.5, opacity: 0 }}
+                className="absolute inset-0 bg-brand-accent rounded-full blur-3xl opacity-20"
+              />
+            )}
+          </AnimatePresence>
+          
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => handleEmergency()}
+            aria-label="Trigger Emergency Alert"
+            className={cn(
+              "relative w-72 h-72 rounded-full bg-brand-accent flex flex-col items-center justify-center text-white shadow-2xl transition-all duration-500",
+              isTriggered ? "emergency-pulse scale-110" : "hover:bg-red-500"
+            )}
+          >
+            <AlertCircle size={80} className="mb-2" aria-hidden="true" />
+            <span className="text-3xl font-black uppercase tracking-widest">Emergency</span>
+            <span className="text-sm font-medium opacity-80">Press for Help</span>
+          </motion.button>
+        </div>
+
+        {/* Distinct SOS Button */}
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => handleEmergency()}
-          aria-label="Trigger Emergency Alert"
-          className={cn(
-            "relative w-72 h-72 rounded-full bg-brand-accent flex flex-col items-center justify-center text-white shadow-2xl transition-all duration-500",
-            isTriggered ? "emergency-pulse scale-110" : "hover:bg-red-500"
-          )}
+          onClick={() => handleEmergency("SOS Signal Triggered")}
+          className="w-full max-w-[320px] py-5 bg-white border-[4px] border-brand-accent rounded-[2rem] flex items-center justify-center gap-4 text-brand-accent shadow-[8px_8px_0px_0px_rgba(255,59,48,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+          aria-label="Immediate SOS"
         >
-          <AlertCircle size={80} className="mb-2" aria-hidden="true" />
-          <span className="text-3xl font-black uppercase tracking-widest">Emergency</span>
-          <span className="text-sm font-medium opacity-80">Press for Help</span>
+          <span className="text-4xl font-black italic tracking-tighter">SOS</span>
+          <div className="h-8 w-[2px] bg-brand-accent/20" />
+          <div className="text-left">
+            <p className="text-xs font-black uppercase tracking-[0.2em] leading-none">Immediate</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Silent Signal</p>
+          </div>
         </motion.button>
       </div>
 
