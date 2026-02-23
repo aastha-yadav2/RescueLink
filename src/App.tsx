@@ -421,6 +421,7 @@ const AdminDashboard = ({
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [severityFilter, setSeverityFilter] = useState<Alert['status'] | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Accepted' | 'Pending'>('All');
+  const [showTraffic, setShowTraffic] = useState(false);
 
   const alertCoords = useMemo(() => {
     if (!selectedAlert) return null;
@@ -686,6 +687,13 @@ const AdminDashboard = ({
                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
               />
+              {showTraffic && (
+                <TileLayer
+                  url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
+                  opacity={0.4}
+                  attribution='&copy; Traffic Data via OSM Transport'
+                />
+              )}
               <MarkerClusterGroup
                 chunkedLoading
                 maxClusterRadius={50}
@@ -738,6 +746,16 @@ const AdminDashboard = ({
             
             {/* Map Overlay UI */}
             <div className="absolute top-6 right-6 z-[1000] flex flex-col gap-2">
+              <button
+                onClick={() => setShowTraffic(!showTraffic)}
+                className={cn(
+                  "glass p-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                  showTraffic ? "bg-brand-accent text-white" : "text-slate-400 hover:text-slate-200"
+                )}
+              >
+                <Activity size={14} />
+                Traffic: {showTraffic ? 'ON' : 'OFF'}
+              </button>
               <div className="glass p-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400">
                 Satellite Link: 98%
               </div>
