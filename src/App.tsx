@@ -24,7 +24,10 @@ import {
   Lock,
   UserPlus,
   LogIn,
-  LogOut
+  LogOut,
+  Camera,
+  Video,
+  VideoOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -254,9 +257,58 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     reasoning: string 
   } | null>(null);
   const [transcript, setTranscript] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
   const watchIdRef = useRef<number | null>(null);
 
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoChunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      streamRef.current = stream;
+      
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      videoChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          videoChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `emergency_recording_${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setStatus("Recording Video Evidence...");
+      handleEmergency("Video SOS Signal Triggered");
+    } catch (err) {
+      console.error("Recording error:", err);
+      setStatus("Camera/Mic access denied.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setStatus("Recording Saved.");
+    }
+  };
 
   useEffect(() => {
     // Initialize Speech Recognition
@@ -405,20 +457,52 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         </div>
 
         {/* Distinct SOS Button */}
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => handleEmergency("SOS Signal Triggered")}
-          className="w-full max-w-[320px] py-5 bg-white border-[4px] border-brand-accent rounded-[2rem] flex items-center justify-center gap-4 text-brand-accent shadow-[8px_8px_0px_0px_rgba(255,59,48,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
-          aria-label="Immediate SOS"
-        >
-          <span className="text-4xl font-black italic tracking-tighter">SOS</span>
-          <div className="h-8 w-[2px] bg-brand-accent/20" />
-          <div className="text-left">
-            <p className="text-xs font-black uppercase tracking-[0.2em] leading-none">Immediate</p>
-            <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Silent Signal</p>
-          </div>
-        </motion.button>
+        <div className="flex flex-col gap-4 w-full max-w-[320px]">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => handleEmergency("SOS Signal Triggered")}
+            className="w-full py-5 bg-white border-[4px] border-brand-accent rounded-[2rem] flex items-center justify-center gap-4 text-brand-accent shadow-[8px_8px_0px_0px_rgba(255,59,48,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+            aria-label="Immediate SOS"
+          >
+            <span className="text-4xl font-black italic tracking-tighter">SOS</span>
+            <div className="h-8 w-[2px] bg-brand-accent/20" />
+            <div className="text-left">
+              <p className="text-xs font-black uppercase tracking-[0.2em] leading-none">Immediate</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Silent Signal</p>
+            </div>
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={isRecording ? stopRecording : startRecording}
+            className={cn(
+              "w-full py-5 rounded-[2rem] flex items-center justify-center gap-4 border-[4px] transition-all relative",
+              isRecording 
+                ? "bg-red-600 border-red-400 text-white shadow-[8px_8px_0px_0px_rgba(153,27,27,1)]" 
+                : "bg-slate-900 border-slate-800 text-white shadow-[8px_8px_0px_0px_rgba(30,41,59,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px]"
+            )}
+            aria-label={isRecording ? "Stop Recording" : "Video SOS"}
+          >
+            {isRecording ? <VideoOff size={32} /> : <Video size={32} />}
+            <div className="h-8 w-[2px] bg-white/20" />
+            <div className="text-left">
+              <p className="text-xs font-black uppercase tracking-[0.2em] leading-none">
+                {isRecording ? "Stop Recording" : "Video SOS"}
+              </p>
+              <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">
+                {isRecording ? "Recording Live..." : "Record Evidence"}
+              </p>
+            </div>
+            {isRecording && (
+              <div className="absolute top-4 right-6 flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-white animate-ping" />
+                <span className="text-[8px] font-black uppercase tracking-widest">REC</span>
+              </div>
+            )}
+          </motion.button>
+        </div>
       </div>
 
       <div className="flex flex-col items-center space-y-6 w-full max-w-md">
