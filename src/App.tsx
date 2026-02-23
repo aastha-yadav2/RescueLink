@@ -499,7 +499,8 @@ const AdminDashboard = ({
   const alertCoords = useMemo(() => {
     if (!selectedAlert) return null;
     const parts = selectedAlert.location.split(',').map(p => parseFloat(p.trim()));
-    return parts.length === 2 ? [parts[0], parts[1]] as [number, number] : null;
+    if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+    return [parts[0], parts[1]] as [number, number];
   }, [selectedAlert]);
 
   const displayAlerts = activeTab === 'active' ? alerts : history;
@@ -777,7 +778,7 @@ const AdminDashboard = ({
                   const hasAlert = alerts.some(a => a.userId === uid);
                   if (hasAlert) return null;
                   const parts = data.location.split(',').map(p => parseFloat(p.trim()));
-                  if (parts.length !== 2) return null;
+                  if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
                   return (
                     <Marker key={uid} position={[parts[0], parts[1]]} icon={UserIcon}>
                       <Popup>
@@ -792,7 +793,7 @@ const AdminDashboard = ({
 
                 {filteredAlerts.map(alert => {
                   const parts = alert.location.split(',').map(p => parseFloat(p.trim()));
-                  if (parts.length !== 2) return null;
+                  if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
                   const isSelected = selectedAlert?.id === alert.id;
                   return (
                     <Marker 
@@ -936,7 +937,20 @@ export default function App() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [history, setHistory] = useState<Alert[]>([]);
   const [activeUsers, setActiveUsers] = useState<Record<string, { location: string, lastSeen: string }>>({});
+  const [newAlertNotification, setNewAlertNotification] = useState<Alert | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (alerts.length > 0) {
+      const latest = alerts[0];
+      const isRecent = (Date.now() - new Date(latest.timestamp).getTime()) < 5000;
+      if (isRecent && view === 'admin') {
+        setNewAlertNotification(latest);
+        const timer = setTimeout(() => setNewAlertNotification(null), 8000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [alerts, view]);
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1089,6 +1103,35 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Real-time Notification */}
+      <AnimatePresence>
+        {newAlertNotification && (
+          <motion.div
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 100 }}
+            className="fixed top-24 right-8 z-[2000] glass p-6 rounded-3xl border-l-4 border-l-brand-accent shadow-2xl max-w-sm"
+          >
+            <div className="flex items-center gap-4 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-brand-accent/20 flex items-center justify-center">
+                <AlertTriangle className="text-brand-accent animate-pulse" size={24} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">New Emergency Alert</p>
+                <p className="text-sm font-black text-white">{newAlertNotification.userId}</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 italic mb-4 line-clamp-2">"{newAlertNotification.transcript}"</p>
+            <button 
+              onClick={() => setNewAlertNotification(null)}
+              className="w-full py-2 bg-brand-accent text-white text-[10px] font-black uppercase tracking-widest rounded-xl"
+            >
+              Acknowledge
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Global Status Bar */}
       <footer className="fixed bottom-0 left-0 right-0 border-t border-white/5 bg-brand-dark/90 backdrop-blur-xl px-8 py-3 z-[1001]">
