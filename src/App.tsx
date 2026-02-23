@@ -19,7 +19,12 @@ import {
   XCircle,
   Activity,
   History,
-  Archive
+  Archive,
+  Mail,
+  Lock,
+  UserPlus,
+  LogIn,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -161,6 +166,78 @@ const StatusBadge = ({ status }: { status: Alert['status'] }) => {
     <span className={cn("px-2.5 py-0.5 rounded-full text-xs font-semibold border", colors[status])}>
       {status}
     </span>
+  );
+};
+
+const AuthScreen = ({ onLogin }: { onLogin: (user: { name: string, email: string }) => void }) => {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setTimeout(() => {
+      onLogin({ name: name || email.split('@')[0], email });
+      setIsLoading(false);
+    }, 1500);
+  };
+
+  return (
+    <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-6">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass w-full max-w-md p-10 rounded-[2.5rem] space-y-8"
+      >
+        <div className="text-center space-y-2">
+          <div className="w-16 h-16 bg-brand-accent/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Shield size={32} className="text-brand-accent" />
+          </div>
+          <h2 className="text-3xl font-black tracking-tighter text-white">
+            {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
+          </h2>
+          <p className="text-slate-500 text-sm font-bold">
+            {mode === 'signin' ? 'Secure access to RescueLink Command' : 'Join the next generation of emergency response'}
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'signup' && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-4">Full Name</label>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" className="w-full bg-slate-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:border-brand-accent/50 transition-all" />
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-4">Email Address</label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="operator@rescuelink.ai" className="w-full bg-slate-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:border-brand-accent/50 transition-all" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-4">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-slate-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:border-brand-accent/50 transition-all" />
+            </div>
+          </div>
+          <button type="submit" disabled={isLoading} className="w-full py-4 bg-brand-accent hover:bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 transition-all disabled:opacity-50">
+            {isLoading ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <>{mode === 'signin' ? <LogIn size={18} /> : <UserPlus size={18} />} {mode === 'signin' ? 'Sign In' : 'Create Account'}</>}
+          </button>
+        </form>
+        <div className="text-center">
+          <button onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')} className="text-xs font-black uppercase tracking-widest text-slate-500 hover:text-brand-accent transition-colors">
+            {mode === 'signin' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+          </button>
+        </div>
+      </motion.div>
+    </div>
   );
 };
 
@@ -933,7 +1010,8 @@ const AdminDashboard = ({
 // --- Main App ---
 
 export default function App() {
-  const [view, setView] = useState<'user' | 'admin'>('user');
+  const [view, setView] = useState<'user' | 'admin' | 'auth'>('user');
+  const [currentUser, setCurrentUser] = useState<{ name: string, email: string } | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [history, setHistory] = useState<Alert[]>([]);
   const [activeUsers, setActiveUsers] = useState<Record<string, { location: string, lastSeen: string }>>({});
@@ -1042,30 +1120,40 @@ export default function App() {
             </div>
           </div>
           
-          <div className="flex bg-slate-900/50 p-1.5 rounded-2xl border border-white/5" role="tablist">
+          <div className="flex items-center gap-4">
+            <div className="flex bg-slate-900/50 p-1.5 rounded-2xl border border-white/5" role="tablist">
+              <button 
+                onClick={() => setView('user')}
+                role="tab"
+                aria-selected={view === 'user'}
+                className={cn(
+                  "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                  view === 'user' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
+                )}
+              >
+                <User size={14} aria-hidden="true" />
+                User Panel
+              </button>
+              <button 
+                onClick={() => setView('admin')}
+                role="tab"
+                aria-selected={view === 'admin'}
+                className={cn(
+                  "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                  view === 'admin' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
+                )}
+              >
+                <LayoutDashboard size={14} aria-hidden="true" />
+                Admin Hub
+              </button>
+            </div>
+
             <button 
-              onClick={() => setView('user')}
-              role="tab"
-              aria-selected={view === 'user'}
-              className={cn(
-                "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                view === 'user' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
-              )}
+              onClick={() => currentUser ? setCurrentUser(null) : setView('auth')}
+              className="w-10 h-10 rounded-xl bg-slate-900/50 border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:border-white/20 transition-all"
+              title={currentUser ? "Sign Out" : "Sign In"}
             >
-              <User size={14} aria-hidden="true" />
-              User Panel
-            </button>
-            <button 
-              onClick={() => setView('admin')}
-              role="tab"
-              aria-selected={view === 'admin'}
-              className={cn(
-                "px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
-                view === 'admin' ? "bg-brand-card text-white shadow-xl border border-white/10" : "text-slate-500 hover:text-slate-300"
-              )}
-            >
-              <LayoutDashboard size={14} aria-hidden="true" />
-              Admin Hub
+              {currentUser ? <LogOut size={20} /> : <LogIn size={20} />}
             </button>
           </div>
         </div>
@@ -1073,7 +1161,20 @@ export default function App() {
 
       <main className="pb-24">
         <AnimatePresence mode="wait">
-          {view === 'user' ? (
+          {view === 'auth' ? (
+            <motion.div
+              key="auth"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.02 }}
+              transition={{ type: "spring", damping: 20, stiffness: 100 }}
+            >
+              <AuthScreen onLogin={(user) => {
+                setCurrentUser(user);
+                setView('user');
+              }} />
+            </motion.div>
+          ) : view === 'user' ? (
             <motion.div
               key="user"
               initial={{ opacity: 0, scale: 0.98 }}
