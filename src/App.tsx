@@ -653,7 +653,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
                   url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                 />
                 <Marker position={coords} icon={UserPinIcon} />
-                <MapUpdater coords={coords} />
+
               </MapContainer>
             ) : (
               <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-600 text-xs font-bold uppercase tracking-widest">
@@ -680,18 +680,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   );
 };
 
-const MapUpdater = ({ coords }: { coords: [number, number] | null }) => {
-  const map = useMap();
-  useEffect(() => {
-    if (coords) {
-      map.flyTo(coords, 15, {
-        duration: 1.5,
-        easeLinearity: 0.25
-      });
-    }
-  }, [coords, map]);
-  return null;
-};
+
 
 const ResponseTimer = ({ acceptedAt }: { acceptedAt: string }) => {
   const [elapsed, setElapsed] = useState<number>(0);
@@ -733,6 +722,16 @@ const AdminDashboard = ({
   onReject: (id: string) => void,
   onResolve: (id: string) => void
 }) => {
+  const MapUpdater = ({ coords, zoom }: { coords: [number, number] | null, zoom: number }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (coords) {
+        map.setView(coords, zoom);
+      }
+    }, [coords, zoom, map]);
+    return null;
+  };
+
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [severityFilter, setSeverityFilter] = useState<Alert['status'] | 'All'>('All');
@@ -999,11 +998,57 @@ const AdminDashboard = ({
               zoom={5} 
               style={{ height: '100%', width: '100%' }}
               zoomControl={false}
+              key={JSON.stringify(alerts.map(a => a.id + a.location)) + JSON.stringify(Object.keys(activeUsers).map(u => u + activeUsers[u].location))}
             >
+              {alertCoords && <MapUpdater coords={alertCoords} zoom={12} />}
               <TileLayer
                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
               />
+
+              {/* Markers for active users */}
+              {Object.entries(activeUsers).map(([userId, userData]) => {
+                const parts = userData.location.split(',').map(p => parseFloat(p.trim()));
+                if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+                const userCoords = [parts[0], parts[1]] as [number, number];
+                return (
+                  <Marker key={`user-${userId}`} position={userCoords} icon={UserPinIcon}>
+                    <Popup>
+                      <div className="font-bold">User: {userId}</div>
+                      <div>Last Seen: {new Date(userData.lastSeen).toLocaleTimeString()}</div>
+                      <div>Location: {userData.location}</div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+
+              {/* Markers for alerts */}
+              {alerts.map(alert => {
+                const parts = alert.location.split(',').map(p => parseFloat(p.trim()));
+                if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+                const alertPosition = [parts[0], parts[1]] as [number, number];
+                return (
+                  <Marker 
+                    key={`alert-${alert.id}`}
+                    position={alertPosition}
+                    icon={selectedAlert?.id === alert.id ? HighlightedIcon : DefaultIcon}
+                    eventHandlers={{
+                      click: () => setSelectedAlert(alert),
+                    }}
+                  >
+                    <Popup>
+                      <div className="font-bold">Alert ID: {alert.id}</div>
+                      <div>User: {alert.userId}</div>
+                      <div>Status: {alert.status}</div>
+                      <div>Location: {alert.location}</div>
+                      <div>Transcript: {alert.transcript}</div>
+                      {alert.videoData && (
+                        <a href={alert.videoData} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">View Video</a>
+                      )}
+                    </Popup>
+                  </Marker>
+                );
+              })}
               {showTraffic && (
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
@@ -1058,7 +1103,7 @@ const AdminDashboard = ({
                   );
                 })}
               </MarkerClusterGroup>
-              <MapUpdater coords={alertCoords} />
+
             </MapContainer>
             
             {/* Map Overlay UI */}
