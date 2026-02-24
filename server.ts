@@ -11,10 +11,44 @@ async function startServer() {
 
   const PORT = 3000;
 
+  app.get("/api/reverse-geocode", async (req, res) => {
+    const { lat, lon } = req.query;
+    if (!lat || !lon) {
+      return res.status(400).json({ error: "Latitude and longitude are required" });
+    }
+
+    console.log(`[Geocode] Request for lat: ${lat}, lon: ${lon}`);
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            "User-Agent": "RescueLinkEmergencyApp/1.0 (contact: admin@rescuelink.example.com)",
+            "Accept-Language": "en-US,en;q=0.9"
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Geocode] Nominatim error (${response.status}):`, errorText);
+        return res.status(response.status).json({ error: "Geocoding service error" });
+      }
+
+      const data = await response.json() as any;
+      console.log(`[Geocode] Success: ${data.display_name?.substring(0, 50)}...`);
+      res.json(data);
+    } catch (error) {
+      console.error("[Geocode] Server-side fetch error:", error);
+      res.status(500).json({ error: "Failed to connect to geocoding service" });
+    }
+  });
+
   // Store active alerts, history, and active users in memory
   let alerts: any[] = [];
   let history: any[] = [];
-  let activeUsers: Record<string, { location: string, lastSeen: string }> = {};
+  let activeUsers: Record<string, { location: string, fullAddress?: string | null, lastSeen: string }> = {};
 
   wss.on("connection", (ws) => {
     console.log("Client connected");
@@ -35,6 +69,7 @@ async function startServer() {
             timestamp: new Date().toISOString(),
             status: message.payload.urgency || "Critical",
             location: message.payload.location || "Unknown Location",
+            fullAddress: message.payload.fullAddress || null,
             userId: message.payload.userId || "Anonymous",
             transcript: message.payload.transcript || "",
             aiReasoning: message.payload.aiReasoning || "",
@@ -108,17 +143,17 @@ async function startServer() {
         }
 
         if (message.type === "LOCATION_UPDATE") {
-          const { userId, location } = message.payload;
+          const { userId, location, fullAddress } = message.payload;
           
           // Update active users
-          activeUsers[userId] = { location, lastSeen: new Date().toISOString() };
+          activeUsers[userId] = { location, fullAddress, lastSeen: new Date().toISOString() };
 
           // Update any active alerts for this user
           let alertUpdated = false;
           alerts = alerts.map(a => {
             if (a.userId === userId) {
               alertUpdated = true;
-              return { ...a, location };
+              return { ...a, location, fullAddress };
             }
             return a;
           });
@@ -126,7 +161,7 @@ async function startServer() {
           // Broadcast location update
           const broadcastData = JSON.stringify({ 
             type: "USER_LOCATION_UPDATED", 
-            payload: { userId, location, activeUsers } 
+            payload: { userId, location, fullAddress, activeUsers } 
           });
           
           wss.clients.forEach((client) => {

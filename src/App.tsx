@@ -27,7 +27,9 @@ import {
   History,
   Mail,
   Lock,
-  UserPlus
+  UserPlus,
+  Plus,
+  Minus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -48,6 +50,7 @@ interface Alert {
   timestamp: string;
   status: 'Critical' | 'Medium' | 'Low';
   location: string;
+  fullAddress?: string | null;
   userId: string;
   transcript?: string;
   aiReasoning?: string;
@@ -255,7 +258,14 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   // Function to reverse geocode coordinates to a human-readable address
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`);
+      const response = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lon}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.warn("Geocoding API returned error:", response.status, errorData);
+        return `Address not found (${response.status})`;
+      }
+
       const data = await response.json();
       if (data && data.display_name) {
         return data.display_name;
@@ -264,6 +274,10 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
       }
     } catch (error) {
       console.error("Reverse geocoding error:", error);
+      // If it's a network error, provide a more helpful message
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
+        return "Network error: Unable to reach geocoding service";
+      }
       return "Error retrieving address";
     }
   };
@@ -744,7 +758,7 @@ const AdminDashboard = ({
 }: { 
   alerts: Alert[], 
   history: Alert[], 
-  activeUsers: Record<string, { location: string, lastSeen: string }>,
+  activeUsers: Record<string, { location: string, fullAddress?: string | null, lastSeen: string }>,
   onAccept: (id: string) => void, 
   onReject: (id: string) => void,
   onResolve: (id: string) => void
@@ -757,6 +771,28 @@ const AdminDashboard = ({
       }
     }, [coords, zoom, map]);
     return null;
+  };
+
+  const CustomZoomControl = () => {
+    const map = useMap();
+    return (
+      <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+        <button 
+          onClick={() => map.zoomIn()}
+          className="w-10 h-10 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white hover:bg-brand-accent transition-all shadow-xl"
+          title="Zoom In"
+        >
+          <Plus size={20} />
+        </button>
+        <button 
+          onClick={() => map.zoomOut()}
+          className="w-10 h-10 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white hover:bg-brand-accent transition-all shadow-xl"
+          title="Zoom Out"
+        >
+          <Minus size={20} />
+        </button>
+      </div>
+    );
   };
 
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
@@ -968,9 +1004,14 @@ const AdminDashboard = ({
                         </div>
                         <span className="font-bold text-slate-200">{alert.userId}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-slate-400">
-                        <MapPin size={14} className="text-brand-accent" />
-                        <span className="truncate">{alert.location}</span>
+                      <div className="flex flex-col gap-1 text-sm text-slate-400">
+                        <div className="flex items-center gap-2">
+                          <MapPin size={14} className="text-brand-accent shrink-0" />
+                          <span className="truncate">{alert.fullAddress || alert.location}</span>
+                        </div>
+                        {alert.fullAddress && (
+                          <span className="text-[10px] text-slate-500 ml-5 leading-tight">{alert.location}</span>
+                        )}
                       </div>
                     </div>
 
@@ -1027,6 +1068,7 @@ const AdminDashboard = ({
               zoomControl={false}
               key={JSON.stringify(alerts.map(a => a.id + a.location)) + JSON.stringify(Object.keys(activeUsers).map(u => u + activeUsers[u].location))}
             >
+              <CustomZoomControl />
               {alertCoords && <MapUpdater coords={alertCoords} zoom={12} />}
               <TileLayer
                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
@@ -1043,7 +1085,8 @@ const AdminDashboard = ({
                     <Popup>
                       <div className="font-bold">User: {userId}</div>
                       <div>Last Seen: {new Date(userData.lastSeen).toLocaleTimeString()}</div>
-                      <div>Location: {userData.location}</div>
+                      <div>Address: {userData.fullAddress || userData.location}</div>
+                      {userData.fullAddress && <div className="text-[10px] text-slate-500">{userData.location}</div>}
                     </Popup>
                   </Marker>
                 );
@@ -1067,7 +1110,8 @@ const AdminDashboard = ({
                       <div className="font-bold">Alert ID: {alert.id}</div>
                       <div>User: {alert.userId}</div>
                       <div>Status: {alert.status}</div>
-                      <div>Location: {alert.location}</div>
+                      <div>Address: {alert.fullAddress || alert.location}</div>
+                      {alert.fullAddress && <div className="text-[10px] text-slate-500">{alert.location}</div>}
                       <div>Transcript: {alert.transcript}</div>
                       {alert.videoData && (
                         <a href={alert.videoData} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">View Video</a>
@@ -1252,7 +1296,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<{ name: string, email: string } | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [history, setHistory] = useState<Alert[]>([]);
-  const [activeUsers, setActiveUsers] = useState<Record<string, { location: string, lastSeen: string }>>({});
+  const [activeUsers, setActiveUsers] = useState<Record<string, { location: string, fullAddress?: string | null, lastSeen: string }>>({});
   const [newAlertNotification, setNewAlertNotification] = useState<Alert | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -1290,8 +1334,8 @@ export default function App() {
         setAlerts(prev => prev.filter(a => a.id !== alertId));
         setHistory(prev => [resolvedAlert, ...prev]);
       } else if (message.type === 'USER_LOCATION_UPDATED') {
-        const { userId, location, activeUsers: updatedUsers } = message.payload;
-        setAlerts(prev => prev.map(a => a.userId === userId ? { ...a, location } : a));
+        const { userId, location, fullAddress, activeUsers: updatedUsers } = message.payload;
+        setAlerts(prev => prev.map(a => a.userId === userId ? { ...a, location, fullAddress } : a));
         if (updatedUsers) setActiveUsers(updatedUsers);
       }
     };
@@ -1307,6 +1351,7 @@ export default function App() {
         type: 'NEW_ALERT',
         payload: { 
           location: data.location, 
+          fullAddress: data.fullAddress,
           userId: userId,
           transcript: data.transcript,
           urgency: data.urgency,
@@ -1326,11 +1371,11 @@ export default function App() {
     }
   };
 
-  const updateLocation = (location: string) => {
+  const updateLocation = (location: string, fullAddress: string | null) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({
         type: 'LOCATION_UPDATE',
-        payload: { userId, location }
+        payload: { userId, location, fullAddress }
       }));
     }
   };
