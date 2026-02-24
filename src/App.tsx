@@ -309,11 +309,32 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' }, 
-        audio: true 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
       });
       streamRef.current = stream;
+
+      // Show preview
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setIsSignLanguageCameraOpen(true); // Reuse the camera container for preview
       
-      const recorder = new MediaRecorder(stream);
+      // Check if audio track exists
+      const audioTracks = stream.getAudioTracks();
+      console.log(`[Recording] Audio tracks: ${audioTracks.length}`, audioTracks[0]?.label);
+
+      const options = { mimeType: 'video/webm;codecs=vp8,opus' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        console.warn(`${options.mimeType} is not supported, falling back to default`);
+        delete (options as any).mimeType;
+      }
+
+      const recorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = recorder;
       videoChunksRef.current = [];
 
@@ -324,21 +345,25 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
       };
 
       recorder.onstop = () => {
-        const blob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+        const blob = new Blob(videoChunksRef.current, { type: options.mimeType || 'video/webm' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `emergency_recording_${Date.now()}.webm`;
+        a.download = `emergency_evidence_${Date.now()}.webm`;
         a.click();
         URL.revokeObjectURL(url);
         
         stream.getTracks().forEach(track => track.stop());
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+        setIsSignLanguageCameraOpen(false);
       };
 
-      recorder.start();
+      recorder.start(1000); // Collect data every second
       setIsRecording(true);
-      setStatus("Recording Video Evidence...");
-      handleEmergency("Video SOS Signal Triggered");
+      setStatus("Recording Video & Audio Evidence...");
+      handleEmergency("Video SOS Signal Triggered (with Audio)");
     } catch (err) {
       console.error("Recording error:", err);
       setStatus("Camera/Mic access denied.");
@@ -349,7 +374,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      setStatus("Recording Saved.");
+      setStatus("Evidence Saved.");
     }
   };
 
@@ -521,9 +546,15 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
           {isSignLanguageCameraOpen && (
             <div className="relative w-full max-w-sm h-60 bg-black rounded-xl overflow-hidden shadow-lg border border-white/10">
               <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-lg font-bold">
-                {isDetectingSignLanguage ? "Detecting Sign..." : "Camera Ready"}
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-lg font-bold pointer-events-none">
+                {isDetectingSignLanguage ? "Detecting Sign..." : isRecording ? "Recording Evidence..." : "Camera Ready"}
               </div>
+              {isRecording && (
+                <div className="absolute top-4 left-4 flex items-center gap-2 bg-red-600 px-3 py-1 rounded-full">
+                  <div className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-white">Live Recording</span>
+                </div>
+              )}
             </div>
           )}
 
