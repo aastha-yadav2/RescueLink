@@ -245,11 +245,29 @@ const AuthScreen = ({ onLogin }: { onLogin: (user: { name: string, email: string
   );
 };
 
-const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) => void, onLocationUpdate: (location: string) => void }) => {
+const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) => void, onLocationUpdate: (location: string, fullAddress: string | null) => void }) => {
   const [isListening, setIsListening] = useState(false);
   const [location, setLocation] = useState<string>("Locating...");
   const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [fullAddress, setFullAddress] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("System Ready");
+
+  // Function to reverse geocode coordinates to a human-readable address
+  const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`);
+      const data = await response.json();
+      if (data && data.display_name) {
+        return data.display_name;
+      } else {
+        return "Address not found";
+      }
+    } catch (error) {
+      console.error("Reverse geocoding error:", error);
+      return "Error retrieving address";
+    }
+  };
+
   const [isTriggered, setIsTriggered] = useState(false);
   const [aiResult, setAiResult] = useState<{ 
     severity: string, 
@@ -359,53 +377,59 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   };
 
   useEffect(() => {
-    // Initialize Speech Recognition
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
+    const initialize = async () => {
+      // Initialize Speech Recognition
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
 
-      recognition.onstart = () => {
-        setIsListening(true);
-        setStatus("Listening for emergency details...");
-      };
+        recognition.onstart = () => {
+          setIsListening(true);
+          setStatus("Listening for emergency details...");
+        };
 
-      recognition.onresult = (event: any) => {
-        const currentTranscript = event.results[0][0].transcript;
-        setTranscript(currentTranscript);
-        handleEmergency(currentTranscript);
-      };
+        recognition.onresult = (event: any) => {
+          const currentTranscript = event.results[0][0].transcript;
+          setTranscript(currentTranscript);
+          handleEmergency(currentTranscript);
+        };
 
-      recognition.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error);
-        setIsListening(false);
-        setStatus("Voice recognition failed. Try manual trigger.");
-      };
+        recognition.onerror = (event: any) => {
+          console.error("Speech recognition error:", event.error);
+          setIsListening(false);
+          setStatus("Voice recognition failed. Try manual trigger.");
+        };
 
-      recognition.onend = () => {
-        setIsListening(false);
-      };
+        recognition.onend = () => {
+          setIsListening(false);
+        };
 
-      recognitionRef.current = recognition;
-    }
+        recognitionRef.current = recognition;
+      }
 
-    if ("geolocation" in navigator) {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          const locString = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
-          setLocation(locString);
-          setCoords([pos.coords.latitude, pos.coords.longitude]);
-          onLocationUpdate(locString);
-        },
-        (err) => {
-          console.error("Location error:", err);
-          setLocation("Location Access Denied");
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      );
-    }
+      if ("geolocation" in navigator) {
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          async (pos) => {
+            const locString = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
+            setLocation(locString);
+            setCoords([pos.coords.latitude, pos.coords.longitude]);
+            const address = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+            setFullAddress(address);
+            onLocationUpdate(locString, address);
+          },
+          (err) => {
+            console.error("Location error:", err);
+            setLocation("Location Access Denied");
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      }
+    };
+
+    initialize();
 
     return () => {
       if (watchIdRef.current !== null) {
@@ -415,18 +439,20 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   }, [onLocationUpdate]);
 
   // Real Voice Recognition trigger
-  const toggleVoiceTrigger = () => {
+  const toggleVoiceTrigger = async () => {
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
       if (recognitionRef.current) {
         // Request a fresh location fix when starting voice capture
         if ("geolocation" in navigator) {
-          navigator.geolocation.getCurrentPosition((pos) => {
+          navigator.geolocation.getCurrentPosition(async (pos) => {
             const locString = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
             setLocation(locString);
             setCoords([pos.coords.latitude, pos.coords.longitude]);
-            onLocationUpdate(locString);
+            const address = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+            setFullAddress(address);
+            onLocationUpdate(locString, address);
           });
         }
         recognitionRef.current.start();
@@ -449,6 +475,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     setStatus("Alert Sent. Dispatchers notified.");
     onTrigger({
       location,
+      fullAddress,
       transcript: finalTranscript,
       urgency: classification.severity,
       aiReasoning: classification.reasoning
