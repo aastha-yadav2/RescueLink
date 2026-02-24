@@ -36,7 +36,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Tooltip } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -1076,51 +1076,49 @@ const AdminDashboard = ({
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
               />
 
-              {/* Markers for active users */}
-              {Object.entries(activeUsers).map(([userId, userData]) => {
-                const parts = userData.location.split(',').map(p => parseFloat(p.trim()));
-                if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
-                const userCoords = [parts[0], parts[1]] as [number, number];
-                return (
-                  <Marker key={`user-${userId}`} position={userCoords} icon={UserPinIcon}>
-                    <Popup>
-                      <div className="font-bold">User: {userId}</div>
-                      <div>Last Seen: {new Date(userData.lastSeen).toLocaleTimeString()}</div>
-                      <div>Address: {userData.fullAddress || userData.location}</div>
-                      {userData.fullAddress && <div className="text-[10px] text-slate-500">{userData.location}</div>}
-                    </Popup>
-                  </Marker>
-                );
-              })}
-
-              {/* Markers for alerts */}
-              {alerts.map(alert => {
-                const parts = alert.location.split(',').map(p => parseFloat(p.trim()));
-                if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
-                const alertPosition = [parts[0], parts[1]] as [number, number];
-                return (
-                  <Marker 
-                    key={`alert-${alert.id}`}
-                    position={alertPosition}
-                    icon={selectedAlert?.id === alert.id ? HighlightedIcon : DefaultIcon}
-                    eventHandlers={{
-                      click: () => setSelectedAlert(alert),
-                    }}
-                  >
-                    <Popup>
-                      <div className="font-bold">Alert ID: {alert.id}</div>
-                      <div>User: {alert.userId}</div>
-                      <div>Status: {alert.status}</div>
-                      <div>Address: {alert.fullAddress || alert.location}</div>
-                      {alert.fullAddress && <div className="text-[10px] text-slate-500">{alert.location}</div>}
-                      <div>Transcript: {alert.transcript}</div>
-                      {alert.videoData && (
-                        <a href={alert.videoData} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">View Video</a>
+              {/* Single Focused Pointer for Selected Alert */}
+              {selectedAlert && alertCoords && (
+                <Marker position={alertCoords} icon={HighlightedIcon} zIndexOffset={2000}>
+                  <Tooltip permanent={false} direction="top" offset={[0, -40]} opacity={1}>
+                    <div className="p-3 glass rounded-2xl border border-white/10 min-w-[200px] shadow-2xl">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-red-400">Emergency Focus</span>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <p className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">User ID</p>
+                          <p className="text-xs font-black text-white">{selectedAlert.userId}</p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">Address</p>
+                          <p className="text-[10px] font-medium text-slate-200 leading-tight">{selectedAlert.fullAddress || 'Resolving...'}</p>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <div>
+                            <p className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">Coordinates</p>
+                            <p className="text-[9px] font-mono text-slate-400">{selectedAlert.location}</p>
+                          </div>
+                          <div>
+                            <p className="text-[8px] uppercase tracking-tighter text-slate-500 font-bold">Last Seen</p>
+                            <p className="text-[9px] font-mono text-slate-400">{new Date(selectedAlert.timestamp).toLocaleTimeString()}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="p-2">
+                      <p className="font-bold text-red-500 mb-1">Critical Alert</p>
+                      <p className="text-xs text-slate-600 mb-2">{selectedAlert.transcript}</p>
+                      {selectedAlert.videoData && (
+                        <a href={selectedAlert.videoData} target="_blank" rel="noopener noreferrer" className="text-blue-500 text-xs underline">View Video Evidence</a>
                       )}
-                    </Popup>
-                  </Marker>
-                );
-              })}
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
+
               {showTraffic && (
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
@@ -1141,6 +1139,9 @@ const AdminDashboard = ({
                   if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
                   return (
                     <Marker key={uid} position={[parts[0], parts[1]]} icon={UserIcon}>
+                      <Tooltip direction="top" offset={[0, -10]}>
+                        <div className="p-1 font-bold">User: {uid}</div>
+                      </Tooltip>
                       <Popup>
                         <div className="text-brand-dark p-1">
                           <p className="font-bold">{uid}</p>
@@ -1165,6 +1166,14 @@ const AdminDashboard = ({
                         click: () => setSelectedAlert(alert)
                       }}
                     >
+                      <Tooltip direction="top" offset={[0, -20]}>
+                        <div className="p-2 space-y-1">
+                          <div className="font-black text-red-500 text-[10px]">USER ID: {alert.userId}</div>
+                          <div className="text-[9px] font-bold">ADDRESS: {alert.fullAddress || alert.location}</div>
+                          <div className="text-[9px] font-mono text-slate-500">COORDS: {alert.location}</div>
+                          <div className="text-[9px] text-slate-500">TIME: {new Date(alert.timestamp).toLocaleTimeString()}</div>
+                        </div>
+                      </Tooltip>
                       <Popup>
                         <div className="text-brand-dark p-1">
                           <p className="font-bold">{alert.userId}</p>
