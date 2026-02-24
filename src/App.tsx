@@ -29,7 +29,9 @@ import {
   Lock,
   UserPlus,
   Plus,
-  Minus
+  Minus,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -776,20 +778,20 @@ const AdminDashboard = ({
   const CustomZoomControl = () => {
     const map = useMap();
     return (
-      <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+      <div className="absolute top-4 right-4 z-[2000] flex flex-col gap-2 pointer-events-none">
         <button 
           onClick={() => map.zoomIn()}
-          className="w-10 h-10 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white hover:bg-brand-accent transition-all shadow-xl"
+          className="w-10 h-10 bg-slate-900/90 backdrop-blur-md border border-white/20 rounded-xl flex items-center justify-center text-white hover:bg-brand-accent transition-all shadow-2xl cursor-pointer pointer-events-auto"
           title="Zoom In"
         >
-          <Plus size={20} />
+          <ZoomIn size={20} strokeWidth={3} />
         </button>
         <button 
           onClick={() => map.zoomOut()}
-          className="w-10 h-10 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl flex items-center justify-center text-white hover:bg-brand-accent transition-all shadow-xl"
+          className="w-10 h-10 bg-slate-900/90 backdrop-blur-md border border-white/20 rounded-xl flex items-center justify-center text-white hover:bg-brand-accent transition-all shadow-2xl cursor-pointer pointer-events-auto"
           title="Zoom Out"
         >
-          <Minus size={20} />
+          <ZoomOut size={20} strokeWidth={3} />
         </button>
       </div>
     );
@@ -1068,7 +1070,6 @@ const AdminDashboard = ({
               zoomControl={false}
               key={JSON.stringify(alerts.map(a => a.id + a.location)) + JSON.stringify(Object.keys(activeUsers).map(u => u + activeUsers[u].location))}
             >
-              <CustomZoomControl />
               {alertCoords && <MapUpdater coords={alertCoords} zoom={12} />}
               <TileLayer
                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
@@ -1174,7 +1175,7 @@ const AdminDashboard = ({
                   );
                 })}
               </MarkerClusterGroup>
-
+              <CustomZoomControl />
             </MapContainer>
             
             {/* Map Overlay UI */}
