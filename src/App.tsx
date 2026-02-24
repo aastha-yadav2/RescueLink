@@ -62,6 +62,13 @@ interface Alert {
   resolvedAt?: string;
   resolutionType?: 'Resolved' | 'Rejected';
   videoData?: string;
+  videoAnalysis?: {
+    severity: 'Critical' | 'Medium' | 'Low';
+    description: string;
+    detectedObjects: string[];
+    incidentTime: string;
+    reasoning: string;
+  };
 }
 
 // --- Leaflet Setup ---
@@ -158,6 +165,83 @@ Transcript to analyze:
       confidence: "0%", 
       keywords_detected: [], 
       reasoning: "Defaulted to Critical due to analysis error." 
+    };
+  }
+};
+
+const analyzeVideoEmergency = async (videoBlob: Blob) => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+    
+    // Convert blob to base64
+    const base64Data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(videoBlob);
+    });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          inlineData: {
+            mimeType: videoBlob.type,
+            data: base64Data
+          }
+        },
+        {
+          text: `Analyze this emergency video evidence. 
+          1. Describe exactly what is happening in the scene.
+          2. Determine the severity (Critical, Medium, Low).
+          3. Detect specific objects or hazards (e.g., fire, weapons, car crash, injured persons).
+          4. Identify the timing of the incident (when the main event occurs in the video).
+          
+          Return ONLY valid JSON:
+          {
+            "severity": "Critical | Medium | Low",
+            "description": "detailed description of the incident",
+            "detected_objects": ["obj1", "obj2"],
+            "incident_time": "timestamp or relative time in video",
+            "reasoning": "explanation for severity level"
+          }`
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            severity: { type: Type.STRING },
+            description: { type: Type.STRING },
+            detected_objects: { type: Type.ARRAY, items: { type: Type.STRING } },
+            incident_time: { type: Type.STRING },
+            reasoning: { type: Type.STRING }
+          },
+          required: ["severity", "description", "detected_objects", "incident_time", "reasoning"]
+        }
+      }
+    });
+
+    const result = JSON.parse(response.text);
+    return {
+      severity: result.severity as 'Critical' | 'Medium' | 'Low',
+      description: result.description,
+      detectedObjects: result.detected_objects,
+      incidentTime: result.incident_time,
+      reasoning: result.reasoning
+    };
+  } catch (err) {
+    console.error("Video Analysis Error:", err);
+    return {
+      severity: "Medium" as const,
+      description: "Video analysis failed.",
+      detectedObjects: [],
+      incidentTime: "Unknown",
+      reasoning: "AI could not process the video data."
     };
   }
 };
@@ -344,14 +428,14 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         }
       };
 
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const blob = new Blob(videoChunksRef.current, { type: options.mimeType || 'video/webm' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `emergency_evidence_${Date.now()}.webm`;
-        a.click();
-        URL.revokeObjectURL(url);
+        
+        setStatus("Analyzing video evidence...");
+        const videoAnalysis = await analyzeVideoEmergency(blob);
+        
+        handleEmergency("Video Evidence Captured", videoAnalysis, url);
         
         stream.getTracks().forEach(track => track.stop());
         if (videoRef.current) {
@@ -503,14 +587,25 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     }
   };
 
-  const handleEmergency = async (text?: string) => {
+  const handleEmergency = async (text?: string, videoAnalysis?: any, videoUrl?: string) => {
     setIsTriggered(true);
     setStatus("Analyzing situation with AI...");
     
     const finalTranscript = text || "Manual emergency button pressed.";
     setTranscript(finalTranscript);
 
-    const classification = await classifyUrgency(finalTranscript);
+    let classification;
+    if (videoAnalysis) {
+      classification = {
+        severity: videoAnalysis.severity,
+        confidence: "95%",
+        keywords_detected: videoAnalysis.detectedObjects,
+        reasoning: videoAnalysis.reasoning
+      };
+    } else {
+      classification = await classifyUrgency(finalTranscript);
+    }
+    
     setAiResult(classification);
     
     setStatus("Alert Sent. Dispatchers notified.");
@@ -519,7 +614,9 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
       fullAddress,
       transcript: finalTranscript,
       urgency: classification.severity,
-      aiReasoning: classification.reasoning
+      aiReasoning: classification.reasoning,
+      videoAnalysis: videoAnalysis,
+      videoData: videoUrl
     });
 
     setTimeout(() => {
@@ -1048,6 +1145,27 @@ const AdminDashboard = ({
                       </div>
                     </div>
 
+                    {alert.videoAnalysis && (
+                      <div className="mb-4 p-3 bg-white/5 rounded-2xl border border-white/5 space-y-2">
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-brand-accent">
+                          <BrainCircuit size={12} />
+                          AI Video Analysis
+                        </div>
+                        <p className="text-xs text-slate-300 leading-relaxed">{alert.videoAnalysis.description}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {alert.videoAnalysis.detectedObjects.map((obj, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-slate-800 rounded text-[8px] font-bold text-slate-400 uppercase">
+                              {obj}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                          <span className="text-[9px] text-slate-500 font-bold uppercase">Incident Time</span>
+                          <span className="text-[9px] font-mono text-brand-accent">{alert.videoAnalysis.incidentTime}</span>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex gap-2">
                       {!alert.resolved ? (
                         !alert.accepted ? (
@@ -1397,7 +1515,8 @@ export default function App() {
           transcript: data.transcript,
           urgency: data.urgency,
           aiReasoning: data.aiReasoning,
-          videoData: data.videoData
+          videoData: data.videoData,
+          videoAnalysis: data.videoAnalysis
         }
       }));
     }

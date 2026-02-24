@@ -74,6 +74,8 @@ async function startServer() {
             transcript: message.payload.transcript || "",
             aiReasoning: message.payload.aiReasoning || "",
             accepted: false,
+            videoData: message.payload.videoData || null,
+            videoAnalysis: message.payload.videoAnalysis || null,
           };
           alerts.push(newAlert);
           
