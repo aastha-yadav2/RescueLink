@@ -18,16 +18,16 @@ import {
   BrainCircuit,
   XCircle,
   Activity,
-  History,
-  Archive,
-  Mail,
-  Lock,
-  UserPlus,
   LogIn,
   LogOut,
-  Camera,
+  Archive,
   Video,
-  VideoOff
+  VideoOff,
+  Camera,
+  History,
+  Mail,
+  Lock,
+  UserPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -56,6 +56,7 @@ interface Alert {
   resolved?: boolean;
   resolvedAt?: string;
   resolutionType?: 'Resolved' | 'Rejected';
+  videoData?: string;
 }
 
 // --- Leaflet Setup ---
@@ -258,6 +259,11 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   } | null>(null);
   const [transcript, setTranscript] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [isSignLanguageCameraOpen, setIsSignLanguageCameraOpen] = useState(false);
+  const [isDetectingSignLanguage, setIsDetectingSignLanguage] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const signLanguageStreamRef = useRef<MediaStream | null>(null);
+
   const watchIdRef = useRef<number | null>(null);
 
   const recognitionRef = useRef<any>(null);
@@ -311,6 +317,45 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
       setIsRecording(false);
       setStatus("Recording Saved.");
     }
+  };
+
+  const startSignLanguageDetection = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      signLanguageStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setIsSignLanguageCameraOpen(true);
+      setStatus("Detecting sign language...");
+      setIsDetectingSignLanguage(true);
+
+      // Simulate detection after a few seconds
+      setTimeout(() => {
+        if (isSignLanguageCameraOpen) { // Only trigger if camera is still open
+          handleEmergency("Sign Language SOS Detected");
+          setStatus("Sign Language SOS Sent!");
+          stopSignLanguageDetection();
+        }
+      }, 5000); 
+
+    } catch (err) {
+      console.error("Sign language camera error:", err);
+      setStatus("Camera access denied for sign language detection.");
+    }
+  };
+
+  const stopSignLanguageDetection = () => {
+    if (signLanguageStreamRef.current) {
+      signLanguageStreamRef.current.getTracks().forEach(track => track.stop());
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    }
+    setIsSignLanguageCameraOpen(false);
+    setIsDetectingSignLanguage(false);
+    setStatus("Sign language detection stopped.");
   };
 
   useEffect(() => {
@@ -430,6 +475,15 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         <p className="text-slate-400 max-w-xs mx-auto">Intelligent Emergency Response at your fingertips.</p>
       </div>
 
+          {isSignLanguageCameraOpen && (
+            <div className="relative w-full max-w-sm h-60 bg-black rounded-xl overflow-hidden shadow-lg border border-white/10">
+              <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-lg font-bold">
+                {isDetectingSignLanguage ? "Detecting Sign..." : "Camera Ready"}
+              </div>
+            </div>
+          )}
+
       <div className="relative flex flex-col items-center gap-8">
         <div className="relative">
           <AnimatePresence>
@@ -506,6 +560,31 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
             )}
           </motion.button>
         </div>
+
+        {/* Sign Language SOS Button */}
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={isSignLanguageCameraOpen ? stopSignLanguageDetection : startSignLanguageDetection}
+          className={cn(
+            "w-full max-w-[320px] py-5 rounded-[2rem] flex items-center justify-center gap-4 border-[4px] transition-all",
+            isSignLanguageCameraOpen 
+              ? "bg-blue-600 border-blue-400 text-white shadow-[8px_8px_0px_0px_rgba(29,78,216,1)]" 
+              : "bg-slate-900 border-slate-800 text-white shadow-[8px_8px_0px_0px_rgba(30,41,59,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px]"
+          )}
+          aria-label={isSignLanguageCameraOpen ? "Stop Sign Language Detection" : "Sign Language SOS"}
+        >
+          {isSignLanguageCameraOpen ? <VideoOff size={32} /> : <Camera size={32} />}
+          <div className="h-8 w-[2px] bg-white/20" />
+          <div className="text-left">
+            <p className="text-xs font-black uppercase tracking-[0.2em] leading-none">
+              {isSignLanguageCameraOpen ? "Stop Detection" : "Sign Language SOS"}
+            </p>
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">
+              {isSignLanguageCameraOpen ? "Detecting..." : "Visual Help"}
+            </p>
+          </div>
+        </motion.button>
       </div>
 
       <div className="flex flex-col items-center space-y-6 w-full max-w-md">
@@ -1159,8 +1238,18 @@ export default function App() {
           userId: userId,
           transcript: data.transcript,
           urgency: data.urgency,
-          aiReasoning: data.aiReasoning
+          aiReasoning: data.aiReasoning,
+          videoData: data.videoData
         }
+      }));
+    }
+  };
+
+  const updateAlertVideo = (alertId: string, videoData: string) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({
+        type: 'UPDATE_ALERT_VIDEO',
+        payload: { id: alertId, videoData }
       }));
     }
   };
