@@ -11,10 +11,21 @@ async function startServer() {
 
   const PORT = 3000;
 
+  // Simple in-memory cache for geocoding results to avoid hitting rate limits
+  const geocodeCache: Record<string, any> = {};
+
   app.get("/api/reverse-geocode", async (req, res) => {
     const { lat, lon } = req.query;
     if (!lat || !lon) {
       return res.status(400).json({ error: "Latitude and longitude are required" });
+    }
+
+    // Round coordinates to 4 decimal places to increase cache hit rate (~11m precision)
+    const cacheKey = `${parseFloat(lat as string).toFixed(4)},${parseFloat(lon as string).toFixed(4)}`;
+    
+    if (geocodeCache[cacheKey]) {
+      console.log(`[Geocode] Cache hit for ${cacheKey}`);
+      return res.json(geocodeCache[cacheKey]);
     }
 
     console.log(`[Geocode] Request for lat: ${lat}, lon: ${lon}`);
@@ -24,7 +35,7 @@ async function startServer() {
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
         {
           headers: {
-            "User-Agent": "RescueLinkEmergencyApp/1.0 (contact: admin@rescuelink.example.com)",
+            "User-Agent": `RescueLinkEmergencyApp/1.1 (contact: admin@rescuelink.example.com; session: ${Date.now()})`,
             "Accept-Language": "en-US,en;q=0.9"
           }
         }
@@ -33,11 +44,23 @@ async function startServer() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`[Geocode] Nominatim error (${response.status}):`, errorText);
+        
+        if (response.status === 429) {
+          return res.status(429).json({ 
+            error: "Rate limit exceeded", 
+            message: "The geocoding service is temporarily unavailable due to high demand. Please try again in a few moments." 
+          });
+        }
+        
         return res.status(response.status).json({ error: "Geocoding service error" });
       }
 
       const data = await response.json() as any;
       console.log(`[Geocode] Success: ${data.display_name?.substring(0, 50)}...`);
+      
+      // Store in cache
+      geocodeCache[cacheKey] = data;
+      
       res.json(data);
     } catch (error) {
       console.error("[Geocode] Server-side fetch error:", error);

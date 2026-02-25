@@ -382,28 +382,42 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
 
   // Function to reverse geocode coordinates to a human-readable address
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+    // Throttle: Don't geocode more than once every 10 seconds
+    const now = Date.now();
+    if (now - lastGeocodeTimeRef.current < 10000 && lastGeocodeCoordsRef.current) {
+      // If coordinates haven't changed much (4 decimal places ~11m), return last address
+      const dLat = Math.abs(lat - lastGeocodeCoordsRef.current.lat);
+      const dLon = Math.abs(lon - lastGeocodeCoordsRef.current.lon);
+      if (dLat < 0.0001 && dLon < 0.0001 && fullAddress) {
+        return fullAddress;
+      }
+    }
+
     try {
       const response = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lon}`);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.warn("Geocoding API returned error:", response.status, errorData);
-        return `Address not found (${response.status})`;
+        
+        if (response.status === 429) {
+          return fullAddress || "Address service busy (Rate limited)";
+        }
+        
+        return fullAddress || `Address not found (${response.status})`;
       }
 
       const data = await response.json();
       if (data && data.display_name) {
+        lastGeocodeTimeRef.current = Date.now();
+        lastGeocodeCoordsRef.current = { lat, lon };
         return data.display_name;
       } else {
-        return "Address not found";
+        return fullAddress || "Address not found";
       }
     } catch (error) {
       console.error("Reverse geocoding error:", error);
-      // If it's a network error, provide a more helpful message
-      if (error instanceof TypeError && error.message === "Failed to fetch") {
-        return "Network error: Unable to reach geocoding service";
-      }
-      return "Error retrieving address";
+      return fullAddress || "Error retrieving address";
     }
   };
 
@@ -422,6 +436,8 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   const signLanguageStreamRef = useRef<MediaStream | null>(null);
 
   const watchIdRef = useRef<number | null>(null);
+  const lastGeocodeTimeRef = useRef<number>(0);
+  const lastGeocodeCoordsRef = useRef<{lat: number, lon: number} | null>(null);
 
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1104,6 +1120,20 @@ const AdminDashboard = ({
   const [severityFilter, setSeverityFilter] = useState<Alert['status'] | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Accepted' | 'Pending'>('All');
   const [showTraffic, setShowTraffic] = useState(false);
+  const [highlightedAlertId, setHighlightedAlertId] = useState<string | null>(null);
+
+  // Logic to highlight new alerts for 3 seconds
+  useEffect(() => {
+    if (alerts.length > 0) {
+      const latest = alerts[0];
+      const isRecent = (Date.now() - new Date(latest.timestamp).getTime()) < 3000;
+      if (isRecent) {
+        setHighlightedAlertId(latest.id);
+        const timer = setTimeout(() => setHighlightedAlertId(null), 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [alerts]);
 
   const alertCoords = useMemo(() => {
     if (!selectedAlert) return null;
@@ -1261,6 +1291,7 @@ const AdminDashboard = ({
                     className={cn(
                       "glass rounded-3xl p-5 transition-all cursor-pointer border-l-4 group",
                       selectedAlert?.id === alert.id ? "ring-2 ring-brand-accent/50" : "hover:bg-white/5",
+                      highlightedAlertId === alert.id ? "ring-2 ring-brand-accent shadow-[0_0_20px_rgba(255,59,48,0.4)]" : "",
                       alert.resolved 
                         ? (alert.resolutionType === 'Rejected' ? "border-l-slate-600" : "border-l-emerald-600") 
                         : (alert.accepted 
@@ -1678,7 +1709,29 @@ export default function App() {
 
   const [userId] = useState(() => 'User_' + Math.floor(Math.random() * 1000));
 
+  // --- Shared Global State Simulation Logic ---
+  // This logic allows the User and Admin panels to communicate in real-time
+  // within the same application instance without needing a backend.
+
   const triggerAlert = (data: any) => {
+    const newAlert: Alert = {
+      id: 'Alert_' + Date.now(),
+      timestamp: new Date().toISOString(),
+      status: data.urgency || 'Critical',
+      location: data.location,
+      fullAddress: data.fullAddress,
+      userId: userId,
+      transcript: data.transcript,
+      aiReasoning: data.aiReasoning,
+      accepted: false,
+      videoData: data.videoData,
+      videoAnalysis: data.videoAnalysis
+    };
+
+    // Update local state directly for instant simulation
+    setAlerts(prev => [newAlert, ...prev]);
+
+    // Also send via WebSocket if connected
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({
         type: 'NEW_ALERT',
@@ -1697,6 +1750,8 @@ export default function App() {
   };
 
   const updateAlertVideo = (alertId: string, videoData: string) => {
+    setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, videoData } : a));
+
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({
         type: 'UPDATE_ALERT_VIDEO',
@@ -1706,6 +1761,15 @@ export default function App() {
   };
 
   const updateLocation = (location: string, fullAddress: string | null) => {
+    // Update local active users state
+    setActiveUsers(prev => ({
+      ...prev,
+      [userId]: { location, fullAddress, lastSeen: new Date().toISOString() }
+    }));
+
+    // Update any active alerts for this user locally
+    setAlerts(prev => prev.map(a => a.userId === userId ? { ...a, location, fullAddress } : a));
+
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({
         type: 'LOCATION_UPDATE',
@@ -1715,18 +1779,44 @@ export default function App() {
   };
 
   const acceptAlert = (id: string) => {
+    setAlerts(prev => prev.map(a => a.id === id ? { ...a, accepted: true, acceptedAt: new Date().toISOString() } : a));
+
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'ACCEPT_ALERT', payload: { id } }));
     }
   };
 
   const rejectAlert = (id: string) => {
+    const alertToReject = alerts.find(a => a.id === id);
+    if (alertToReject) {
+      const rejectedAlert: Alert = {
+        ...alertToReject,
+        resolved: true,
+        resolvedAt: new Date().toISOString(),
+        resolutionType: 'Rejected'
+      };
+      setAlerts(prev => prev.filter(a => a.id !== id));
+      setHistory(prev => [rejectedAlert, ...prev]);
+    }
+
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'REJECT_ALERT', payload: { id } }));
     }
   };
 
   const resolveAlert = (id: string) => {
+    const alertToResolve = alerts.find(a => a.id === id);
+    if (alertToResolve) {
+      const resolvedAlert: Alert = {
+        ...alertToResolve,
+        resolved: true,
+        resolvedAt: new Date().toISOString(),
+        resolutionType: 'Resolved'
+      };
+      setAlerts(prev => prev.filter(a => a.id !== id));
+      setHistory(prev => [resolvedAlert, ...prev]);
+    }
+
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'RESOLVE_ALERT', payload: { id } }));
     }
