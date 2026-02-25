@@ -31,7 +31,11 @@ import {
   Plus,
   Minus,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Settings,
+  Phone,
+  HeartPulse,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -246,6 +250,23 @@ const analyzeVideoEmergency = async (videoBlob: Blob) => {
   }
 };
 
+const generateFamilySMS = async (location: string, severity: string) => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Generate a short, urgent emergency SMS message for family members.
+      Format: "Emergency alert triggered at ${location}. Severity: ${severity}. Please respond immediately."
+      
+      Return ONLY the message text following that exact format.`,
+    });
+    return response.text.trim();
+  } catch (err) {
+    console.error("SMS Generation Error:", err);
+    return `Emergency alert triggered at ${location}. Severity: ${severity}. Please respond immediately.`;
+  }
+};
+
 // --- Components ---
 
 const StatusBadge = ({ status }: { status: Alert['status'] }) => {
@@ -340,6 +361,24 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [fullAddress, setFullAddress] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("System Ready");
+  
+  // Family Contact System State
+  const [familyContacts, setFamilyContacts] = useState<string[]>(() => {
+    const saved = localStorage.getItem('family_contacts');
+    return saved ? JSON.parse(saved) : ["", ""];
+  });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [smsNotification, setSmsNotification] = useState<{ content: string, timestamp: string } | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('family_contacts', JSON.stringify(familyContacts));
+  }, [familyContacts]);
+
+  const handleContactChange = (index: number, value: string) => {
+    const newContacts = [...familyContacts];
+    newContacts[index] = value;
+    setFamilyContacts(newContacts);
+  };
 
   // Function to reverse geocode coordinates to a human-readable address
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
@@ -616,6 +655,16 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     
     setAiResult(classification);
     
+    // Notify Family
+    if (familyContacts.some(c => c.trim() !== "")) {
+      const smsContent = await generateFamilySMS(fullAddress || location, classification.severity);
+      setSmsNotification({
+        content: smsContent,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      setTimeout(() => setSmsNotification(null), 10000);
+    }
+
     setStatus("Alert Sent. Dispatchers notified.");
     onTrigger({
       location,
@@ -646,7 +695,96 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         </motion.div>
         <h1 className="text-5xl font-black tracking-tighter">RescueLink AI</h1>
         <p className="text-slate-400 max-w-xs mx-auto">Intelligent Emergency Response at your fingertips.</p>
+        
+        {/* Status Indicators */}
+        <div className="flex justify-center gap-4 mt-4">
+          <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Helpline Ready</span>
+          </div>
+          {familyContacts.some(c => c.trim() !== "") && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">Family Contacts Synced</span>
+            </div>
+          )}
+        </div>
       </div>
+
+      <div className="absolute top-6 right-6 z-50">
+        <button 
+          onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+          className="p-3 bg-slate-900/50 border border-white/10 rounded-2xl text-slate-400 hover:text-white transition-all"
+        >
+          <Settings size={20} />
+        </button>
+        
+        <AnimatePresence>
+          {isSettingsOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              className="absolute right-0 mt-4 w-64 glass p-6 rounded-[2rem] border border-white/10 shadow-2xl"
+            >
+              <h3 className="text-xs font-black uppercase tracking-widest text-white mb-4">Family Contacts</h3>
+              <div className="space-y-4">
+                {familyContacts.map((contact, i) => (
+                  <div key={i} className="space-y-1">
+                    <label className="text-[8px] font-black uppercase tracking-widest text-slate-500 ml-2">Contact {i + 1}</label>
+                    <input 
+                      type="tel" 
+                      value={contact}
+                      onChange={(e) => handleContactChange(i, e.target.value)}
+                      placeholder="+91 XXXXX XXXXX"
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl py-2 px-3 text-xs focus:outline-none focus:border-brand-accent/50 transition-all"
+                    />
+                  </div>
+                ))}
+                <button 
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="w-full py-2 bg-brand-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                >
+                  Save Contacts
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* SMS Notification */}
+      <AnimatePresence>
+        {smsNotification && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-sm z-[100] px-6"
+          >
+            <div className="glass p-4 rounded-3xl border border-emerald-500/30 shadow-2xl">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-emerald-500/20 rounded-lg text-emerald-500">
+                    <CheckCircle2 size={14} />
+                  </div>
+                  <span className="text-xs font-black uppercase tracking-widest text-emerald-500">Family Notified ✔</span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-500">{smsNotification.timestamp}</span>
+              </div>
+              <div className="bg-slate-900/50 rounded-2xl p-3 border border-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <MessageSquare size={10} className="text-slate-500" />
+                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Simulated SMS Content</span>
+                </div>
+                <p className="text-[11px] text-slate-300 italic leading-relaxed">
+                  "{smsNotification.content}"
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
           {isSignLanguageCameraOpen && (
             <div className="relative w-full max-w-sm h-60 bg-black rounded-xl overflow-hidden shadow-lg border border-white/10">
@@ -764,6 +902,34 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
             </p>
           </div>
         </motion.button>
+
+        {/* Helpline Buttons */}
+        <div className="grid grid-cols-3 gap-3 w-full max-w-[320px]">
+          <a 
+            href="tel:112"
+            className="flex flex-col items-center justify-center p-4 bg-slate-900/50 border border-white/5 rounded-3xl hover:bg-red-500/10 hover:border-red-500/20 transition-all group"
+          >
+            <Phone size={20} className="text-red-500 mb-1 group-hover:scale-110 transition-transform" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-white">112</span>
+            <span className="text-[8px] font-bold text-slate-500 uppercase">Emergency</span>
+          </a>
+          <a 
+            href="tel:102"
+            className="flex flex-col items-center justify-center p-4 bg-slate-900/50 border border-white/5 rounded-3xl hover:bg-emerald-500/10 hover:border-emerald-500/20 transition-all group"
+          >
+            <HeartPulse size={20} className="text-emerald-500 mb-1 group-hover:scale-110 transition-transform" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-white">102</span>
+            <span className="text-[8px] font-bold text-slate-500 uppercase">Ambulance</span>
+          </a>
+          <a 
+            href="tel:100"
+            className="flex flex-col items-center justify-center p-4 bg-slate-900/50 border border-white/5 rounded-3xl hover:bg-blue-500/10 hover:border-blue-500/20 transition-all group"
+          >
+            <Shield size={20} className="text-blue-500 mb-1 group-hover:scale-110 transition-transform" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-white">100</span>
+            <span className="text-[8px] font-bold text-slate-500 uppercase">Police</span>
+          </a>
+        </div>
       </div>
 
       <div className="flex flex-col items-center space-y-6 w-full max-w-md">
