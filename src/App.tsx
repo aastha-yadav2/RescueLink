@@ -432,6 +432,14 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         const blob = new Blob(videoChunksRef.current, { type: options.mimeType || 'video/webm' });
         const url = URL.createObjectURL(blob);
         
+        // Trigger automatic download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `emergency_evidence_${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
         setStatus("Analyzing video evidence...");
         const videoAnalysis = await analyzeVideoEmergency(blob);
         
