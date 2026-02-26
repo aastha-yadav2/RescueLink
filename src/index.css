@@ -89,3 +89,13 @@
 .user-pin-pulse {
   animation: marker-pulse-gold 3s ease-in-out infinite;
 }
+
+@keyframes marker-pulse-critical {
+  0% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(255, 59, 48, 0)); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 10px rgba(255, 59, 48, 0.5)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(255, 59, 48, 0)); }
+}
+
+.critical-marker-pulse {
+  animation: marker-pulse-critical 2s ease-in-out infinite;
+}

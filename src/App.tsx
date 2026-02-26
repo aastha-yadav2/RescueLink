@@ -107,6 +107,14 @@ const UserPinIcon = L.icon({
   className: 'user-pin-pulse'
 });
 
+const CriticalIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  className: 'critical-marker-pulse'
+});
+
 L.Marker.prototype.options.icon = DefaultIcon;
 
 // --- AI Service ---
@@ -1581,12 +1589,21 @@ const AdminDashboard = ({
                   const parts = alert.location.split(',').map(p => parseFloat(p.trim()));
                   if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
                   const isSelected = selectedAlert?.id === alert.id;
+                  const isCritical = alert.status === 'Critical';
+                  
+                  let icon = DefaultIcon;
+                  if (isSelected) {
+                    icon = HighlightedIcon;
+                  } else if (isCritical) {
+                    icon = CriticalIcon;
+                  }
+
                   return (
                     <Marker 
                       key={alert.id} 
                       position={[parts[0], parts[1]]}
-                      icon={isSelected ? HighlightedIcon : DefaultIcon}
-                      zIndexOffset={isSelected ? 1000 : 0}
+                      icon={icon}
+                      zIndexOffset={isSelected ? 1000 : (isCritical ? 500 : 0)}
                       eventHandlers={{
                         click: () => setSelectedAlert(alert)
                       }}
