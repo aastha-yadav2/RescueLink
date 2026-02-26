@@ -504,13 +504,6 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
       });
       streamRef.current = stream;
 
-      // Show preview
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setIsSignLanguageCameraOpen(true); // Reuse the camera container for preview
-      
       // Check if audio track exists
       const audioTracks = stream.getAudioTracks();
       console.log(`[Recording] Audio tracks: ${audioTracks.length}`, audioTracks[0]?.label);
@@ -549,10 +542,9 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         handleEmergency("Video Evidence Captured", videoAnalysis, url);
         
         stream.getTracks().forEach(track => track.stop());
-        if (videoRef.current) {
+        if (videoRef.current && !isDetectingSignLanguage) {
           videoRef.current.srcObject = null;
         }
-        setIsSignLanguageCameraOpen(false);
       };
 
       recorder.start(1000); // Collect data every second
