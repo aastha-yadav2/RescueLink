@@ -188,30 +188,37 @@ const analyzeVideoEmergency = async (videoBlob: Blob) => {
       reader.readAsDataURL(videoBlob);
     });
 
+    // Clean up MIME type (Gemini doesn't like codec parameters)
+    const cleanMimeType = videoBlob.type.split(';')[0] || 'video/webm';
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [
         {
-          inlineData: {
-            mimeType: videoBlob.type,
-            data: base64Data
-          }
-        },
-        {
-          text: `Analyze this emergency video evidence. 
-          1. Describe exactly what is happening in the scene.
-          2. Determine the severity (Critical, Medium, Low).
-          3. Detect specific objects or hazards (e.g., fire, weapons, car crash, injured persons).
-          4. Identify the timing of the incident (when the main event occurs in the video).
-          
-          Return ONLY valid JSON:
-          {
-            "severity": "Critical | Medium | Low",
-            "description": "detailed description of the incident",
-            "detected_objects": ["obj1", "obj2"],
-            "incident_time": "timestamp or relative time in video",
-            "reasoning": "explanation for severity level"
-          }`
+          parts: [
+            {
+              inlineData: {
+                mimeType: cleanMimeType,
+                data: base64Data
+              }
+            },
+            {
+              text: `Analyze this emergency video evidence. 
+              1. Describe exactly what is happening in the scene.
+              2. Determine the severity (Critical, Medium, Low).
+              3. Detect specific objects or hazards (e.g., fire, weapons, car crash, injured persons).
+              4. Identify the timing of the incident (when the main event occurs in the video).
+              
+              Return ONLY valid JSON:
+              {
+                "severity": "Critical | Medium | Low",
+                "description": "detailed description of the incident",
+                "detected_objects": ["obj1", "obj2"],
+                "incident_time": "timestamp or relative time in video",
+                "reasoning": "explanation for severity level"
+              }`
+            }
+          ]
         }
       ],
       config: {
@@ -247,6 +254,46 @@ const analyzeVideoEmergency = async (videoBlob: Blob) => {
       incidentTime: "Unknown",
       reasoning: "AI could not process the video data."
     };
+  }
+};
+
+const detectSignFromFrame = async (base64Image: string) => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          parts: [
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: base64Image
+              }
+            },
+            {
+              text: "Analyze this image. Is the person showing a 'Help' or 'SOS' sign in sign language? Respond with a JSON object: { 'isHelpSign': boolean, 'confidence': number, 'detectedSign': string }"
+            }
+          ]
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isHelpSign: { type: Type.BOOLEAN },
+            confidence: { type: Type.NUMBER },
+            detectedSign: { type: Type.STRING }
+          },
+          required: ["isHelpSign", "confidence", "detectedSign"]
+        }
+      }
+    });
+    return JSON.parse(response.text);
+  } catch (err) {
+    console.error("Sign Language Detection Error:", err);
+    return { isHelpSign: false, confidence: 0, detectedSign: "Error" };
   }
 };
 
@@ -434,6 +481,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   const [isDetectingSignLanguage, setIsDetectingSignLanguage] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const signLanguageStreamRef = useRef<MediaStream | null>(null);
+  const signLanguageIntervalRef = useRef<number | null>(null);
 
   const watchIdRef = useRef<number | null>(null);
   const lastGeocodeTimeRef = useRef<number>(0);
@@ -525,26 +573,47 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     }
   };
 
+  const captureFrame = (): string | null => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0);
+        return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      }
+    }
+    return null;
+  };
+
   const startSignLanguageDetection = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // Use front camera (user-facing)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user' } 
+      });
       signLanguageStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
       setIsSignLanguageCameraOpen(true);
-      setStatus("Detecting sign language...");
+      setStatus("Detecting sign language (Front Camera)...");
       setIsDetectingSignLanguage(true);
 
-      // Simulate detection after a few seconds
-      setTimeout(() => {
-        if (isSignLanguageCameraOpen) { // Only trigger if camera is still open
-          handleEmergency("Sign Language SOS Detected");
-          setStatus("Sign Language SOS Sent!");
-          stopSignLanguageDetection();
+      // Start detection loop
+      signLanguageIntervalRef.current = window.setInterval(async () => {
+        const frame = captureFrame();
+        if (frame) {
+          const result = await detectSignFromFrame(frame);
+          if (result.isHelpSign && result.confidence > 0.7) {
+            handleEmergency(`Sign Language SOS Detected: ${result.detectedSign}`);
+            setStatus(`Sign Language SOS Sent: ${result.detectedSign}`);
+            stopSignLanguageDetection();
+          }
         }
-      }, 5000); 
+      }, 3000); // Check every 3 seconds
 
     } catch (err) {
       console.error("Sign language camera error:", err);
@@ -553,6 +622,10 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   };
 
   const stopSignLanguageDetection = () => {
+    if (signLanguageIntervalRef.current) {
+      clearInterval(signLanguageIntervalRef.current);
+      signLanguageIntervalRef.current = null;
+    }
     if (signLanguageStreamRef.current) {
       signLanguageStreamRef.current.getTracks().forEach(track => track.stop());
       if (videoRef.current) {
@@ -814,6 +887,12 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
                   <span className="text-[10px] font-black uppercase tracking-widest text-white">Live Recording</span>
                 </div>
               )}
+              <button 
+                onClick={() => isDetectingSignLanguage ? stopSignLanguageDetection() : stopRecording()}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-all"
+              >
+                <XCircle size={20} />
+              </button>
             </div>
           )}
 
