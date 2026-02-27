@@ -130,6 +130,16 @@
   animation: traffic-pulse 2s ease-in-out infinite;
 }
 
+@keyframes traffic-flow {
+  from { stroke-dashoffset: 20; }
+  to { stroke-dashoffset: 0; }
+}
+
+.traffic-flow {
+  stroke-dasharray: 10, 10;
+  animation: traffic-flow 1s linear infinite;
+}
+
 @keyframes reroute-glow {
   0% { filter: drop-shadow(0 0 2px #10b981); }
   50% { filter: drop-shadow(0 0 8px #10b981); }
@@ -138,6 +148,16 @@
 
 .reroute-glow {
   animation: reroute-glow 2s ease-in-out infinite;
+}
+
+@keyframes emergency-pulse {
+  0% { fill-opacity: 0.1; stroke-width: 1; r: 300; }
+  50% { fill-opacity: 0.3; stroke-width: 3; r: 400; }
+  100% { fill-opacity: 0.1; stroke-width: 1; r: 300; }
+}
+
+.emergency-pulse {
+  animation: emergency-pulse 2s ease-in-out infinite;
 }
 
 .ambulance-marker {

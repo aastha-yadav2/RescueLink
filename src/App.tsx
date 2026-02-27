@@ -473,10 +473,39 @@ const AuthScreen = ({ onLogin }: { onLogin: (user: { name: string, email: string
   );
 };
 
-const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode }: { 
+const MapViewToggle = ({ mode, onModeChange }: { mode: 'Normal' | 'Emergency' | 'Traffic', onModeChange: (mode: 'Normal' | 'Emergency' | 'Traffic') => void }) => {
+  return (
+    <div className="flex bg-slate-900/80 backdrop-blur-md p-1 rounded-2xl border border-white/10 shadow-2xl">
+      {[
+        { id: 'Normal', label: 'Normal View', icon: LayoutDashboard },
+        { id: 'Emergency', label: 'Emergency Mode', icon: AlertTriangle },
+        { id: 'Traffic', label: 'Traffic Optimization', icon: Car }
+      ].map((item) => (
+        <button
+          key={item.id}
+          onClick={() => onModeChange(item.id as any)}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+            mode === item.id 
+              ? "bg-brand-accent text-white shadow-lg" 
+              : "text-slate-500 hover:text-slate-300"
+          )}
+        >
+          <item.icon size={14} />
+          <span className="hidden sm:inline">{item.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode, trafficSimulation, mapViewMode, onUpdateMapViewMode }: { 
   onTrigger: (data: any) => void, 
   onLocationUpdate: (location: string, fullAddress: string | null) => void,
-  disasterMode: { active: boolean, type: string | null, timestamp: string | null }
+  disasterMode: { active: boolean, type: string | null, timestamp: string | null },
+  trafficSimulation: { active: boolean, showHeatmap: boolean, showReroutes: boolean, showAmbulance: boolean, accidentLocation: [number, number] },
+  mapViewMode: 'Normal' | 'Emergency' | 'Traffic',
+  onUpdateMapViewMode: (mode: 'Normal' | 'Emergency' | 'Traffic') => void
 }) => {
   const [isListening, setIsListening] = useState(false);
   const [location, setLocation] = useState<string>("Locating...");
@@ -860,9 +889,9 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode }: {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[85vh] space-y-8 p-6 relative">
-      {/* Disaster Banner */}
+      {/* Disaster/Emergency Banner */}
       <AnimatePresence>
-        {disasterMode.active && (
+        {(disasterMode.active || mapViewMode === 'Emergency') && (
           <motion.div
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -874,11 +903,11 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode }: {
               <div className="flex items-center gap-3 mb-1">
                 <AlertTriangle className="animate-bounce" size={24} />
                 <h2 className="text-xl font-black uppercase tracking-tighter">
-                  🚨 EMERGENCY ALERT ISSUED – {disasterMode.type}
+                  🚨 EMERGENCY ALERT ISSUED – {disasterMode.active ? disasterMode.type : 'CRITICAL INCIDENT'}
                 </h2>
               </div>
               <p className="text-xs font-bold uppercase tracking-widest opacity-90">
-                Please follow evacuation instructions immediately.
+                {disasterMode.active ? 'Please follow evacuation instructions immediately.' : 'Emergency Response Active in your area.'}
               </p>
             </div>
           </motion.div>
@@ -1242,14 +1271,28 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode }: {
             )}
           </AnimatePresence>
 
-          <div className="h-48 rounded-xl overflow-hidden relative border border-white/5">
+          <div className="h-64 rounded-xl overflow-hidden relative border border-white/5">
+            <div className="absolute top-4 right-4 z-[1000]">
+              <MapViewToggle mode={mapViewMode} onModeChange={onUpdateMapViewMode} />
+            </div>
+            
+            <div className="absolute bottom-4 left-4 z-[1000] glass px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2">
+              <div className={cn(
+                "w-2 h-2 rounded-full animate-pulse",
+                mapViewMode === 'Emergency' ? "bg-red-500" : mapViewMode === 'Traffic' ? "bg-emerald-500" : "bg-blue-500"
+              )} />
+              <span className="text-[8px] font-black uppercase tracking-widest text-white">
+                Mode: {mapViewMode === 'Normal' ? 'Normal Monitoring' : mapViewMode === 'Emergency' ? 'Emergency Response Active' : 'AI Traffic Optimization Active'}
+              </span>
+            </div>
+
             {coords ? (
               <MapContainer 
                 center={coords} 
-                zoom={disasterMode.active ? 16 : 15} 
-                style={{ height: '100%', width: '100%' }}
+                zoom={mapViewMode !== 'Normal' ? 16 : 15} 
+                style={{ height: '100%', width: '100%', filter: mapViewMode === 'Emergency' ? 'grayscale(0.5) brightness(0.8)' : 'none' }}
                 zoomControl={false}
-                dragging={!disasterMode.active}
+                dragging={mapViewMode === 'Normal'}
                 scrollWheelZoom={false}
               >
                 <TileLayer
@@ -1257,45 +1300,80 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode }: {
                 />
                 <Marker position={coords} icon={UserPinIcon} />
 
-                {/* Disaster Simulation Map Elements */}
-                {disasterMode.active && (
+                {/* Normal View Elements */}
+                {mapViewMode === 'Normal' && (
                   <>
+                    {/* Just user markers and standard alerts */}
+                  </>
+                )}
+
+                {/* Emergency Mode Elements */}
+                {mapViewMode === 'Emergency' && (
+                  <>
+                    {/* Accident Hotspot */}
+                    <Marker position={trafficSimulation.accidentLocation} icon={AccidentIcon}>
+                      <Circle 
+                        center={trafficSimulation.accidentLocation} 
+                        radius={300} 
+                        pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1, className: 'emergency-pulse' }} 
+                      />
+                    </Marker>
+
                     {/* Safe Zones */}
                     {SAFE_ZONES.map(sz => (
-                      <Marker key={sz.id} position={sz.coords} icon={SafeZoneIcon}>
-                        <Tooltip permanent direction="top" offset={[0, -20]}>
-                          <div className="text-[8px] font-black uppercase tracking-tighter">{sz.name}</div>
-                        </Tooltip>
-                      </Marker>
+                      <Marker key={sz.id} position={sz.coords} icon={SafeZoneIcon} />
                     ))}
 
-                    {/* Danger Zones */}
-                    {DANGER_ZONES.map(dz => (
-                      <React.Fragment key={dz.id}>
-                        <Circle 
-                          center={dz.coords} 
-                          radius={dz.radius} 
-                          pathOptions={{ 
-                            color: 'red', 
-                            fillColor: 'red', 
-                            fillOpacity: 0.2,
-                            dashArray: disasterMode.type === 'Fire' ? '5, 10' : undefined,
-                            className: 'danger-zone-pulse'
-                          }} 
-                        />
-                        <Marker position={dz.coords} icon={DangerZoneIcon} />
-                      </React.Fragment>
-                    ))}
-
-                    {/* Evacuation Route (Mock) */}
-                    {nearestSafeZone && (
+                    {/* Evacuation Route if disaster active */}
+                    {disasterMode.active && nearestSafeZone && (
                       <Polyline 
                         positions={[coords, nearestSafeZone.coords]} 
-                        pathOptions={{ color: '#10b981', weight: 6, opacity: 0.8, lineCap: 'round' }} 
-                      >
-                        <Tooltip sticky>Evacuation Route</Tooltip>
-                      </Polyline>
+                        pathOptions={{ color: '#10b981', weight: 6, opacity: 0.8 }} 
+                      />
                     )}
+                  </>
+                )}
+
+                {/* Traffic Optimization Mode Elements */}
+                {mapViewMode === 'Traffic' && (
+                  <>
+                    {/* Traffic Heatmap */}
+                    {TRAFFIC_ROADS.map(road => (
+                      <Polyline 
+                        key={road.id}
+                        positions={road.coords}
+                        pathOptions={{ 
+                          color: road.congestion === 'Heavy' ? '#ef4444' : road.congestion === 'Moderate' ? '#f97316' : '#22c55e',
+                          weight: 8,
+                          opacity: 0.6,
+                          className: road.congestion === 'Smooth' ? 'traffic-flow' : 'traffic-pulse'
+                        }}
+                      />
+                    ))}
+
+                    {/* AI Reroutes */}
+                    {REROUTE_PATHS.map(path => (
+                      <Polyline 
+                        key={path.id}
+                        positions={path.coords}
+                        pathOptions={{ color: '#10b981', weight: 6, dashArray: '10, 10', className: 'reroute-glow' }} 
+                      />
+                    ))}
+
+                    {/* Ambulance Corridor */}
+                    {trafficSimulation.active && (
+                      <Polyline 
+                        positions={AMBULANCE_PATH}
+                        pathOptions={{ color: '#10b981', weight: 12, opacity: 0.2 }}
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* Original Disaster Simulation Map Elements (Legacy support) */}
+                {disasterMode.active && mapViewMode === 'Normal' && (
+                  <>
+                    {/* ... existing disaster logic if needed ... */}
                   </>
                 )}
 
@@ -1363,7 +1441,9 @@ const AdminDashboard = ({
   onActivateDisaster,
   onDeactivateDisaster,
   trafficSimulation,
-  onUpdateTrafficSim
+  onUpdateTrafficSim,
+  mapViewMode,
+  onUpdateMapViewMode
 }: { 
   alerts: Alert[], 
   history: Alert[], 
@@ -1381,7 +1461,9 @@ const AdminDashboard = ({
     showAmbulance: boolean,
     accidentLocation: [number, number]
   },
-  onUpdateTrafficSim: (payload: any) => void
+  onUpdateTrafficSim: (payload: any) => void,
+  mapViewMode: 'Normal' | 'Emergency' | 'Traffic',
+  onUpdateMapViewMode: (mode: 'Normal' | 'Emergency' | 'Traffic') => void
 }) => {
   const MapUpdater = ({ coords, zoom }: { coords: [number, number] | null, zoom: number }) => {
     const map = useMap();
@@ -1418,6 +1500,19 @@ const AdminDashboard = ({
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [ambulancePosIndex, setAmbulancePosIndex] = useState(0);
+  const [dynamicCongestion, setDynamicCongestion] = useState(28);
+
+  useEffect(() => {
+    if (mapViewMode === 'Traffic') {
+      const interval = setInterval(() => {
+        setDynamicCongestion(prev => {
+          const change = Math.floor(Math.random() * 3) - 1; // -1, 0, or 1
+          return Math.min(45, Math.max(15, prev + change));
+        });
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [mapViewMode]);
 
   useEffect(() => {
     if (trafficSimulation.active && trafficSimulation.showAmbulance) {
@@ -1637,27 +1732,31 @@ const AdminDashboard = ({
         <div className="glass p-6 rounded-3xl flex flex-col justify-center relative overflow-hidden">
           <div className="relative z-10">
             <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Impact Analytics</p>
-            {trafficSimulation.active ? (
+            {mapViewMode === 'Traffic' || trafficSimulation.active ? (
               <div className="space-y-3">
                 <div className="flex justify-between items-end">
                   <div>
-                    <p className="text-2xl font-black text-white">+18m</p>
-                    <p className="text-[8px] font-bold text-red-500 uppercase">Est. Delay Time</p>
+                    <p className="text-2xl font-black text-white">{mapViewMode === 'Traffic' ? `${dynamicCongestion}%` : '+18m'}</p>
+                    <p className={cn("text-[8px] font-bold uppercase", mapViewMode === 'Traffic' ? "text-emerald-500" : "text-red-500")}>
+                      {mapViewMode === 'Traffic' ? 'Avg Congestion' : 'Est. Delay Time'}
+                    </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-black text-white">142</p>
-                    <p className="text-[8px] font-bold text-slate-500 uppercase">Vehicles Impacted</p>
+                    <p className="text-2xl font-black text-white">{mapViewMode === 'Traffic' ? `${(dynamicCongestion * 0.4).toFixed(1)}m` : '142'}</p>
+                    <p className="text-[8px] font-bold text-slate-500 uppercase">
+                      {mapViewMode === 'Traffic' ? 'Delay Reduction' : 'Vehicles Impacted'}
+                    </p>
                   </div>
                 </div>
                 <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: '75%' }}
-                    className="h-full bg-brand-accent"
+                    animate={{ width: mapViewMode === 'Traffic' ? `${dynamicCongestion}%` : '75%' }}
+                    className={cn("h-full", mapViewMode === 'Traffic' ? "bg-emerald-500" : "bg-brand-accent")}
                   />
                 </div>
                 <p className="text-[9px] text-slate-400 leading-tight">
-                  <span className="text-emerald-500 font-bold">AI Suggestion:</span> 3 alternate routes identified. Priority corridor established.
+                  <span className="text-emerald-500 font-bold">AI Status:</span> {mapViewMode === 'Traffic' ? 'Optimization active. Flow improved by 14%.' : '3 alternate routes identified. Priority corridor established.'}
                 </p>
               </div>
             ) : (
@@ -1671,22 +1770,22 @@ const AdminDashboard = ({
 
         <div className="glass p-6 rounded-3xl flex flex-col justify-center">
           <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Efficiency Metrics</p>
-          {trafficSimulation.active ? (
+          {mapViewMode === 'Traffic' || trafficSimulation.active ? (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xl font-black text-emerald-500">-24%</p>
-                <p className="text-[8px] font-bold text-slate-500 uppercase">Response Time</p>
+                <p className="text-xl font-black text-emerald-500">{mapViewMode === 'Traffic' ? '84' : '-24%'}</p>
+                <p className="text-[8px] font-bold text-slate-500 uppercase">{mapViewMode === 'Traffic' ? 'Vehicles Rerouted' : 'Response Time'}</p>
               </div>
               <div>
-                <p className="text-xl font-black text-emerald-500">12.5L</p>
+                <p className="text-xl font-black text-emerald-500">{mapViewMode === 'Traffic' ? '18.2L' : '12.5L'}</p>
                 <p className="text-[8px] font-bold text-slate-500 uppercase">Fuel Saved</p>
               </div>
               <div>
-                <p className="text-xl font-black text-emerald-500">32kg</p>
+                <p className="text-xl font-black text-emerald-500">{mapViewMode === 'Traffic' ? '45kg' : '32kg'}</p>
                 <p className="text-[8px] font-bold text-slate-500 uppercase">CO2 Reduced</p>
               </div>
               <div>
-                <p className="text-xl font-black text-emerald-500">-40%</p>
+                <p className="text-xl font-black text-emerald-500">{mapViewMode === 'Traffic' ? '-52%' : '-40%'}</p>
                 <p className="text-[8px] font-bold text-slate-500 uppercase">Congestion</p>
               </div>
             </div>
@@ -1911,10 +2010,29 @@ const AdminDashboard = ({
         {/* Map & Details */}
         <div className="xl:col-span-8 space-y-6">
           <div className="glass rounded-[2.5rem] h-[500px] relative overflow-hidden">
+            <div className="absolute top-6 right-6 z-[1000]">
+              <MapViewToggle mode={mapViewMode} onModeChange={onUpdateMapViewMode} />
+            </div>
+
+            <div className="absolute bottom-6 left-6 z-[1000] glass px-4 py-2 rounded-2xl border border-white/10 flex items-center gap-3">
+              <div className={cn(
+                "w-2.5 h-2.5 rounded-full animate-pulse",
+                mapViewMode === 'Emergency' ? "bg-red-500" : mapViewMode === 'Traffic' ? "bg-emerald-500" : "bg-blue-500"
+              )} />
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black uppercase tracking-widest text-white">
+                  {mapViewMode === 'Normal' ? 'Normal Monitoring' : mapViewMode === 'Emergency' ? 'Emergency Response Active' : 'AI Traffic Optimization Active'}
+                </span>
+                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">
+                  System Status: Operational
+                </span>
+              </div>
+            </div>
+
             <MapContainer 
               center={[20.5937, 78.9629]} 
               zoom={5} 
-              style={{ height: '100%', width: '100%' }}
+              style={{ height: '100%', width: '100%', filter: mapViewMode === 'Emergency' ? 'grayscale(0.5) brightness(0.8)' : 'none' }}
               zoomControl={false}
               key={JSON.stringify(alerts.map(a => a.id + a.location)) + JSON.stringify(Object.keys(activeUsers).map(u => u + activeUsers[u].location))}
             >
@@ -1923,6 +2041,65 @@ const AdminDashboard = ({
                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
               />
+
+              {/* Normal View Elements */}
+              {mapViewMode === 'Normal' && (
+                <>
+                  {/* Standard markers handled by MarkerClusterGroup below */}
+                </>
+              )}
+
+              {/* Emergency Mode Elements */}
+              {mapViewMode === 'Emergency' && (
+                <>
+                  {/* Accident Hotspot */}
+                  <Marker position={trafficSimulation.accidentLocation} icon={AccidentIcon}>
+                    <Circle 
+                      center={trafficSimulation.accidentLocation} 
+                      radius={500} 
+                      pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1, className: 'emergency-pulse' }} 
+                    />
+                  </Marker>
+                  
+                  {/* Safe Zones */}
+                  {SAFE_ZONES.map(sz => (
+                    <Marker key={sz.id} position={sz.coords} icon={SafeZoneIcon} />
+                  ))}
+                </>
+              )}
+
+              {/* Traffic Optimization Mode Elements */}
+              {mapViewMode === 'Traffic' && (
+                <>
+                  {/* Traffic Heatmap */}
+                  {TRAFFIC_ROADS.map(road => (
+                    <Polyline 
+                      key={road.id}
+                      positions={road.coords}
+                      pathOptions={{ 
+                        color: road.congestion === 'Heavy' ? '#ef4444' : road.congestion === 'Moderate' ? '#f97316' : '#22c55e',
+                        weight: 10,
+                        opacity: 0.6,
+                        className: road.congestion === 'Smooth' ? 'traffic-flow' : 'traffic-pulse'
+                      }}
+                    />
+                  ))}
+
+                  {/* AI Reroutes */}
+                  {REROUTE_PATHS.map(path => (
+                    <Polyline 
+                      key={path.id}
+                      positions={path.coords}
+                      pathOptions={{ color: '#10b981', weight: 8, dashArray: '10, 10', className: 'reroute-glow' }} 
+                    />
+                  ))}
+
+                  {/* Ambulance Simulation */}
+                  {trafficSimulation.showAmbulance && (
+                    <Marker position={AMBULANCE_PATH[ambulancePosIndex]} icon={AmbulanceIcon} />
+                  )}
+                </>
+              )}
 
               {/* Single Focused Pointer for Selected Alert */}
               {selectedAlert && alertCoords && (
@@ -2307,6 +2484,7 @@ export default function App() {
     showAmbulance: true,
     accidentLocation: [12.9750, 77.5900]
   });
+  const [mapViewMode, setMapViewMode] = useState<'Normal' | 'Emergency' | 'Traffic'>('Normal');
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -2336,6 +2514,7 @@ export default function App() {
         setActiveUsers(message.payload.activeUsers || {});
         if (message.payload.disasterMode) setDisasterMode(message.payload.disasterMode);
         if (message.payload.trafficSimulation) setTrafficSimulation(message.payload.trafficSimulation);
+        if (message.payload.mapViewMode) setMapViewMode(message.payload.mapViewMode);
       } else if (message.type === 'ALERT_CREATED') {
         setAlerts(prev => [message.payload, ...prev]);
       } else if (message.type === 'ALERT_UPDATED') {
@@ -2354,6 +2533,8 @@ export default function App() {
         setDisasterMode(message.payload);
       } else if (message.type === 'TRAFFIC_SIM_UPDATED') {
         setTrafficSimulation(message.payload);
+      } else if (message.type === 'MAP_VIEW_MODE_UPDATED') {
+        setMapViewMode(message.payload);
       }
     };
 
@@ -2493,6 +2674,12 @@ export default function App() {
     }
   };
 
+  const updateMapViewMode = (mode: 'Normal' | 'Emergency' | 'Traffic') => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'SET_MAP_VIEW_MODE', payload: mode }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-brand-dark overflow-x-hidden selection:bg-brand-accent/30">
       {/* Navigation */}
@@ -2575,6 +2762,9 @@ export default function App() {
                   onTrigger={triggerAlert} 
                   onLocationUpdate={updateLocation} 
                   disasterMode={disasterMode}
+                  trafficSimulation={trafficSimulation}
+                  mapViewMode={mapViewMode}
+                  onUpdateMapViewMode={updateMapViewMode}
                 />
               </motion.div>
             ) : (
@@ -2597,6 +2787,8 @@ export default function App() {
                   onDeactivateDisaster={deactivateDisaster}
                   trafficSimulation={trafficSimulation}
                   onUpdateTrafficSim={updateTrafficSim}
+                  mapViewMode={mapViewMode}
+                  onUpdateMapViewMode={updateMapViewMode}
                 />
               </motion.div>
             )}

@@ -80,20 +80,31 @@ async function startServer() {
     showAmbulance: true,
     accidentLocation: [12.9750, 77.5900] as [number, number]
   };
+  let mapViewMode = 'Normal'; // 'Normal', 'Emergency', 'Traffic'
 
   wss.on("connection", (ws) => {
     console.log("Client connected");
 
-    // Send current alerts, history, active users, disaster mode, and traffic simulation to the new client
+    // Send current alerts, history, active users, disaster mode, traffic simulation, and map view mode to the new client
     ws.send(JSON.stringify({ 
       type: "INIT_DATA", 
-      payload: { alerts, history, activeUsers, disasterMode, trafficSimulation } 
+      payload: { alerts, history, activeUsers, disasterMode, trafficSimulation, mapViewMode } 
     }));
 
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
         
+        if (message.type === "SET_MAP_VIEW_MODE") {
+          mapViewMode = message.payload;
+          const broadcastData = JSON.stringify({ type: "MAP_VIEW_MODE_UPDATED", payload: mapViewMode });
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(broadcastData);
+            }
+          });
+        }
+
         if (message.type === "UPDATE_TRAFFIC_SIM") {
           trafficSimulation = { ...trafficSimulation, ...message.payload };
           const broadcastData = JSON.stringify({ type: "TRAFFIC_SIM_UPDATED", payload: trafficSimulation });
