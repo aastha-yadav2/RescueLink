@@ -109,3 +109,43 @@
 .danger-zone-pulse {
   animation: danger-pulse 3s ease-in-out infinite;
 }
+
+@keyframes accident-blink {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.accident-marker-blink {
+  animation: accident-blink 1s ease-in-out infinite;
+}
+
+@keyframes traffic-pulse {
+  0% { stroke-width: 8; opacity: 0.8; }
+  50% { stroke-width: 12; opacity: 1; }
+  100% { stroke-width: 8; opacity: 0.8; }
+}
+
+.traffic-pulse {
+  animation: traffic-pulse 2s ease-in-out infinite;
+}
+
+@keyframes reroute-glow {
+  0% { filter: drop-shadow(0 0 2px #10b981); }
+  50% { filter: drop-shadow(0 0 8px #10b981); }
+  100% { filter: drop-shadow(0 0 2px #10b981); }
+}
+
+.reroute-glow {
+  animation: reroute-glow 2s ease-in-out infinite;
+}
+
+.ambulance-marker {
+  background: #ef4444;
+  border: 2px solid white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+}

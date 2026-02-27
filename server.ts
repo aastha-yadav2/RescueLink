@@ -73,20 +73,37 @@ async function startServer() {
   let history: any[] = [];
   let activeUsers: Record<string, { location: string, fullAddress?: string | null, lastSeen: string }> = {};
   let disasterMode = { active: false, type: null as string | null, timestamp: null as string | null };
+  let trafficSimulation = { 
+    active: false, 
+    showHeatmap: true, 
+    showReroutes: true, 
+    showAmbulance: true,
+    accidentLocation: [12.9750, 77.5900] as [number, number]
+  };
 
   wss.on("connection", (ws) => {
     console.log("Client connected");
 
-    // Send current alerts, history, active users, and disaster mode to the new client
+    // Send current alerts, history, active users, disaster mode, and traffic simulation to the new client
     ws.send(JSON.stringify({ 
       type: "INIT_DATA", 
-      payload: { alerts, history, activeUsers, disasterMode } 
+      payload: { alerts, history, activeUsers, disasterMode, trafficSimulation } 
     }));
 
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
         
+        if (message.type === "UPDATE_TRAFFIC_SIM") {
+          trafficSimulation = { ...trafficSimulation, ...message.payload };
+          const broadcastData = JSON.stringify({ type: "TRAFFIC_SIM_UPDATED", payload: trafficSimulation });
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(broadcastData);
+            }
+          });
+        }
+
         if (message.type === "ACTIVATE_DISASTER") {
           disasterMode = {
             active: true,

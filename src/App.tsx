@@ -40,7 +40,9 @@ import {
   Waves,
   Mountain,
   Navigation,
-  Timer
+  Timer,
+  Car,
+  Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -125,6 +127,36 @@ const DangerZoneIcon = L.icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41],
 });
+
+const AccidentIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [35, 56],
+  iconAnchor: [17, 56],
+  className: 'accident-marker-blink'
+});
+
+const AmbulanceIcon = L.divIcon({
+  html: `<div class="ambulance-marker"><svg viewBox="0 0 24 24" width="24" height="24" fill="white" stroke="red" stroke-width="2"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-1.1 0-2 .9-2 2v7h2m14 0c0 1.1-.9 2-2 2s-2-.9-2-2m-6 0c0 1.1-.9 2-2 2s-2-.9-2-2M5 17c0 1.1-.9 2-2 2s-2-.9-2-2m11-7V7m-4 3V7M9 10V7M5 10V7"/></svg></div>`,
+  className: 'ambulance-icon',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15]
+});
+
+const TRAFFIC_ROADS = [
+  { id: 'r1', name: 'Main Street', coords: [[12.9700, 77.5800], [12.9800, 77.6000]] as [number, number][], congestion: 'Heavy' },
+  { id: 'r2', name: 'Oak Avenue', coords: [[12.9800, 77.6000], [12.9900, 77.6200]] as [number, number][], congestion: 'Moderate' },
+  { id: 'r3', name: 'Bypass Road', coords: [[12.9700, 77.5800], [12.9750, 77.6100]] as [number, number][], congestion: 'Smooth' },
+  { id: 'r4', name: 'Central Link', coords: [[12.9750, 77.5900], [12.9850, 77.5900]] as [number, number][], congestion: 'Heavy' },
+];
+
+const REROUTE_PATHS = [
+  { id: 'p1', name: 'AI Optimized Route A', coords: [[12.9700, 77.5800], [12.9650, 77.5950], [12.9750, 77.6100]] as [number, number][] },
+];
+
+const AMBULANCE_PATH = [
+  [12.9700, 77.5800], [12.9680, 77.5850], [12.9660, 77.5900], [12.9650, 77.5950], [12.9680, 77.6000], [12.9720, 77.6050], [12.9750, 77.6100]
+] as [number, number][];
 
 const SAFE_ZONES = [
   { id: 'sz1', name: 'Emergency Shelter A', type: 'Shelter', coords: [12.9716, 77.5946] as [number, number] },
@@ -1329,7 +1361,9 @@ const AdminDashboard = ({
   onResolve,
   disasterMode,
   onActivateDisaster,
-  onDeactivateDisaster
+  onDeactivateDisaster,
+  trafficSimulation,
+  onUpdateTrafficSim
 }: { 
   alerts: Alert[], 
   history: Alert[], 
@@ -1339,7 +1373,15 @@ const AdminDashboard = ({
   onResolve: (id: string) => void,
   disasterMode: { active: boolean, type: string | null, timestamp: string | null },
   onActivateDisaster: (type: string) => void,
-  onDeactivateDisaster: () => void
+  onDeactivateDisaster: () => void,
+  trafficSimulation: { 
+    active: boolean, 
+    showHeatmap: boolean, 
+    showReroutes: boolean, 
+    showAmbulance: boolean,
+    accidentLocation: [number, number]
+  },
+  onUpdateTrafficSim: (payload: any) => void
 }) => {
   const MapUpdater = ({ coords, zoom }: { coords: [number, number] | null, zoom: number }) => {
     const map = useMap();
@@ -1375,6 +1417,16 @@ const AdminDashboard = ({
 
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+  const [ambulancePosIndex, setAmbulancePosIndex] = useState(0);
+
+  useEffect(() => {
+    if (trafficSimulation.active && trafficSimulation.showAmbulance) {
+      const interval = setInterval(() => {
+        setAmbulancePosIndex(prev => (prev + 1) % AMBULANCE_PATH.length);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [trafficSimulation.active, trafficSimulation.showAmbulance]);
   const [severityFilter, setSeverityFilter] = useState<Alert['status'] | 'All'>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Accepted' | 'Pending'>('All');
   const [showTraffic, setShowTraffic] = useState(false);
@@ -1474,12 +1526,14 @@ const AdminDashboard = ({
         </div>
       </div>
 
-      {/* Disaster Simulation Controls */}
+      {/* Disaster & Traffic Simulation Controls */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="glass p-6 rounded-3xl space-y-4">
-          <div className="flex items-center gap-2 text-slate-400 mb-2">
-            <Radio size={16} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Disaster Simulation</span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Radio size={16} />
+              <span className="text-[10px] font-black uppercase tracking-widest">Disaster Simulation</span>
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-2">
             {[
@@ -1490,7 +1544,7 @@ const AdminDashboard = ({
               <button
                 key={d.type}
                 onClick={() => onActivateDisaster(d.type)}
-                disabled={disasterMode.active}
+                disabled={disasterMode.active || trafficSimulation.active}
                 className={cn(
                   "flex items-center justify-between p-3 rounded-xl border transition-all",
                   disasterMode.type === d.type 
@@ -1518,35 +1572,130 @@ const AdminDashboard = ({
           </div>
         </div>
 
-        <div className="glass p-6 rounded-3xl flex flex-col justify-center">
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Users Affected</p>
-          <p className="text-4xl font-black text-white">
-            {disasterMode.active ? Object.keys(activeUsers).length : 0}
-          </p>
-          <div className="flex items-center gap-2 mt-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Real-time GPS Tracking</span>
+        <div className="glass p-6 rounded-3xl space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-slate-400">
+              <Car size={16} />
+              <span className="text-[10px] font-black uppercase tracking-widest">Traffic AI Simulation</span>
+            </div>
+            <button 
+              onClick={() => onUpdateTrafficSim({ active: !trafficSimulation.active })}
+              className={cn(
+                "px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest transition-all",
+                trafficSimulation.active ? "bg-emerald-500 text-white" : "bg-slate-800 text-slate-500"
+              )}
+            >
+              {trafficSimulation.active ? 'Active' : 'Offline'}
+            </button>
+          </div>
+          
+          <div className="space-y-2">
+            <button
+              onClick={() => onUpdateTrafficSim({ active: !trafficSimulation.active })}
+              className={cn(
+                "w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2",
+                trafficSimulation.active 
+                  ? "bg-emerald-600 border-emerald-500 text-white" 
+                  : "bg-slate-900/50 border-white/5 text-slate-400 hover:border-white/20"
+              )}
+            >
+              <Zap size={14} />
+              {trafficSimulation.active ? 'Simulation Running' : 'Activate Traffic AI'}
+            </button>
+
+            {trafficSimulation.active && (
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                {[
+                  { label: 'Heatmap', key: 'showHeatmap' },
+                  { label: 'Reroutes', key: 'showReroutes' },
+                  { label: 'Ambulance', key: 'showAmbulance' }
+                ].map((ctrl) => (
+                  <button
+                    key={ctrl.key}
+                    onClick={() => onUpdateTrafficSim({ [ctrl.key]: !trafficSimulation[ctrl.key as keyof typeof trafficSimulation] })}
+                    className={cn(
+                      "py-2 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all",
+                      trafficSimulation[ctrl.key as keyof typeof trafficSimulation]
+                        ? "bg-brand-accent/20 border-brand-accent text-brand-accent"
+                        : "bg-slate-900/50 border-white/5 text-slate-600"
+                    )}
+                  >
+                    {ctrl.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => onUpdateTrafficSim({ active: false })}
+                  className="py-2 rounded-lg text-[8px] font-black uppercase tracking-widest border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-all"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="glass p-6 rounded-3xl flex flex-col justify-center relative overflow-hidden">
+          <div className="relative z-10">
+            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Impact Analytics</p>
+            {trafficSimulation.active ? (
+              <div className="space-y-3">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-2xl font-black text-white">+18m</p>
+                    <p className="text-[8px] font-bold text-red-500 uppercase">Est. Delay Time</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-black text-white">142</p>
+                    <p className="text-[8px] font-bold text-slate-500 uppercase">Vehicles Impacted</p>
+                  </div>
+                </div>
+                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: '75%' }}
+                    className="h-full bg-brand-accent"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">
+                  <span className="text-emerald-500 font-bold">AI Suggestion:</span> 3 alternate routes identified. Priority corridor established.
+                </p>
+              </div>
+            ) : (
+              <div className="py-4 text-center">
+                <p className="text-4xl font-black text-slate-800">--</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-600 mt-2">Simulation Inactive</p>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="glass p-6 rounded-3xl flex flex-col justify-center">
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Avg Evacuation Time</p>
-          <p className="text-4xl font-black text-white">
-            {disasterMode.active ? "8.4m" : "--"}
-          </p>
-          <div className="flex items-center gap-2 mt-2 text-emerald-500">
-            <Activity size={10} />
-            <span className="text-[8px] font-black uppercase tracking-widest">Optimized Routes</span>
-          </div>
-        </div>
-
-        <div className="glass p-6 rounded-3xl flex flex-col justify-center">
-          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Active Safe Zones</p>
-          <p className="text-4xl font-black text-white">{SAFE_ZONES.length}</p>
-          <div className="flex items-center gap-2 mt-2 text-blue-500">
-            <Shield size={10} />
-            <span className="text-[8px] font-black uppercase tracking-widest">Capacity: 85%</span>
-          </div>
+          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Efficiency Metrics</p>
+          {trafficSimulation.active ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xl font-black text-emerald-500">-24%</p>
+                <p className="text-[8px] font-bold text-slate-500 uppercase">Response Time</p>
+              </div>
+              <div>
+                <p className="text-xl font-black text-emerald-500">12.5L</p>
+                <p className="text-[8px] font-bold text-slate-500 uppercase">Fuel Saved</p>
+              </div>
+              <div>
+                <p className="text-xl font-black text-emerald-500">32kg</p>
+                <p className="text-[8px] font-bold text-slate-500 uppercase">CO2 Reduced</p>
+              </div>
+              <div>
+                <p className="text-xl font-black text-emerald-500">-40%</p>
+                <p className="text-[8px] font-bold text-slate-500 uppercase">Congestion</p>
+              </div>
+            </div>
+          ) : (
+            <div className="py-4 text-center">
+              <Shield size={32} className="mx-auto text-slate-800 mb-2" />
+              <p className="text-[8px] font-black uppercase tracking-widest text-slate-600">Monitoring Active</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1826,6 +1975,98 @@ const AdminDashboard = ({
                 />
               )}
 
+              {/* Traffic Simulation Map Elements */}
+              {trafficSimulation.active && (
+                <>
+                  {/* Accident Hotspot */}
+                  <Marker position={trafficSimulation.accidentLocation} icon={AccidentIcon}>
+                    <Tooltip permanent direction="top" offset={[0, -40]}>
+                      <div className="px-2 py-1 bg-red-600 text-white text-[8px] font-black uppercase tracking-widest rounded shadow-xl">
+                        Accident Hotspot Detected
+                      </div>
+                    </Tooltip>
+                  </Marker>
+
+                  {/* Traffic Heatmap Simulation */}
+                  {trafficSimulation.showHeatmap && (
+                    <>
+                      <Circle 
+                        center={trafficSimulation.accidentLocation} 
+                        radius={500} 
+                        pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.3, weight: 0 }} 
+                      />
+                      <Circle 
+                        center={trafficSimulation.accidentLocation} 
+                        radius={1000} 
+                        pathOptions={{ color: 'orange', fillColor: 'orange', fillOpacity: 0.2, weight: 0 }} 
+                      />
+                      <Circle 
+                        center={trafficSimulation.accidentLocation} 
+                        radius={1500} 
+                        pathOptions={{ color: 'yellow', fillColor: 'yellow', fillOpacity: 0.1, weight: 0 }} 
+                      />
+                    </>
+                  )}
+
+                  {/* Road Network */}
+                  {TRAFFIC_ROADS.map(road => (
+                    <Polyline 
+                      key={road.id}
+                      positions={road.coords}
+                      pathOptions={{ 
+                        color: road.congestion === 'Heavy' ? '#ef4444' : road.congestion === 'Moderate' ? '#f97316' : '#22c55e',
+                        weight: road.congestion === 'Heavy' ? 8 : 4,
+                        className: road.congestion === 'Heavy' ? 'traffic-pulse' : ''
+                      }}
+                    >
+                      <Tooltip sticky>
+                        <div className="text-[8px] font-bold uppercase">{road.name} - {road.congestion} Traffic</div>
+                      </Tooltip>
+                    </Polyline>
+                  ))}
+
+                  {/* AI Optimized Reroutes */}
+                  {trafficSimulation.showReroutes && REROUTE_PATHS.map(path => (
+                    <Polyline 
+                      key={path.id}
+                      positions={path.coords}
+                      pathOptions={{ 
+                        color: '#10b981', 
+                        weight: 6, 
+                        dashArray: '10, 10',
+                        className: 'reroute-glow'
+                      }}
+                    >
+                      <Tooltip sticky>
+                        <div className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">AI Optimized Route</div>
+                      </Tooltip>
+                    </Polyline>
+                  ))}
+
+                  {/* Ambulance Simulation */}
+                  {trafficSimulation.showAmbulance && (
+                    <motion.div>
+                      <Marker 
+                        position={AMBULANCE_PATH[ambulancePosIndex]} 
+                        icon={AmbulanceIcon}
+                      >
+                        <Tooltip permanent direction="right" offset={[20, 0]}>
+                          <div className="px-2 py-1 bg-emerald-600 text-white text-[8px] font-black uppercase tracking-widest rounded shadow-xl flex items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                            Emergency Vehicle – Priority Lane Active
+                          </div>
+                        </Tooltip>
+                      </Marker>
+                      {/* Priority Corridor */}
+                      <Polyline 
+                        positions={AMBULANCE_PATH}
+                        pathOptions={{ color: '#10b981', weight: 12, opacity: 0.2 }}
+                      />
+                    </motion.div>
+                  )}
+                </>
+              )}
+
               {/* Disaster Visualization Heatmap */}
               {disasterMode.active && DANGER_ZONES.map(dz => (
                 <React.Fragment key={dz.id}>
@@ -2053,6 +2294,19 @@ export default function App() {
   const [activeUsers, setActiveUsers] = useState<Record<string, { location: string, fullAddress?: string | null, lastSeen: string }>>({});
   const [newAlertNotification, setNewAlertNotification] = useState<Alert | null>(null);
   const [disasterMode, setDisasterMode] = useState<{ active: boolean, type: string | null, timestamp: string | null }>({ active: false, type: null, timestamp: null });
+  const [trafficSimulation, setTrafficSimulation] = useState<{ 
+    active: boolean, 
+    showHeatmap: boolean, 
+    showReroutes: boolean, 
+    showAmbulance: boolean,
+    accidentLocation: [number, number]
+  }>({ 
+    active: false, 
+    showHeatmap: true, 
+    showReroutes: true, 
+    showAmbulance: true,
+    accidentLocation: [12.9750, 77.5900]
+  });
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -2081,6 +2335,7 @@ export default function App() {
         setHistory(message.payload.history);
         setActiveUsers(message.payload.activeUsers || {});
         if (message.payload.disasterMode) setDisasterMode(message.payload.disasterMode);
+        if (message.payload.trafficSimulation) setTrafficSimulation(message.payload.trafficSimulation);
       } else if (message.type === 'ALERT_CREATED') {
         setAlerts(prev => [message.payload, ...prev]);
       } else if (message.type === 'ALERT_UPDATED') {
@@ -2097,6 +2352,8 @@ export default function App() {
         setDisasterMode(message.payload);
       } else if (message.type === 'DISASTER_DEACTIVATED') {
         setDisasterMode(message.payload);
+      } else if (message.type === 'TRAFFIC_SIM_UPDATED') {
+        setTrafficSimulation(message.payload);
       }
     };
 
@@ -2230,6 +2487,12 @@ export default function App() {
     }
   };
 
+  const updateTrafficSim = (payload: Partial<typeof trafficSimulation>) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'UPDATE_TRAFFIC_SIM', payload }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-brand-dark overflow-x-hidden selection:bg-brand-accent/30">
       {/* Navigation */}
@@ -2332,6 +2595,8 @@ export default function App() {
                   disasterMode={disasterMode}
                   onActivateDisaster={activateDisaster}
                   onDeactivateDisaster={deactivateDisaster}
+                  trafficSimulation={trafficSimulation}
+                  onUpdateTrafficSim={updateTrafficSim}
                 />
               </motion.div>
             )}
