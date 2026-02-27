@@ -111,7 +111,7 @@ const UserIcon = L.icon({
 });
 
 const UserPinIcon = L.icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [30, 48],
   iconAnchor: [15, 48],
@@ -162,11 +162,58 @@ const AMBULANCE_PATH = [
   [12.9700, 77.5800], [12.9680, 77.5850], [12.9660, 77.5900], [12.9650, 77.5950], [12.9680, 77.6000], [12.9720, 77.6050], [12.9750, 77.6100]
 ] as [number, number][];
 
-const SAFE_ZONES = [
-  { id: 'sz1', name: 'Emergency Shelter A', type: 'Shelter', coords: [12.9716, 77.5946] as [number, number] },
-  { id: 'sz2', name: 'City General Hospital', type: 'Hospital', coords: [12.9850, 77.6100] as [number, number] },
-  { id: 'sz3', name: 'Relief Camp North', type: 'Camp', coords: [13.0000, 77.5800] as [number, number] },
+const RELIEF_CAMPS = [
+  { 
+    id: 'rc1', 
+    name: 'City Relief Camp Alpha', 
+    type: 'Flood Shelter', 
+    coords: [12.9716, 77.5946] as [number, number],
+    capacity: 500,
+    available: 120,
+    contact: '+91-9876543210'
+  },
+  { 
+    id: 'rc2', 
+    name: 'St. Mary Medical Camp', 
+    type: 'Medical Camp', 
+    coords: [12.9850, 77.6100] as [number, number],
+    capacity: 300,
+    available: 45,
+    contact: '+91-9876543211'
+  },
+  { 
+    id: 'rc3', 
+    name: 'North Zone Community Hall', 
+    type: 'General Relief', 
+    coords: [13.0000, 77.5800] as [number, number],
+    capacity: 200,
+    available: 0,
+    contact: '+91-9876543212'
+  },
+  { 
+    id: 'rc4', 
+    name: 'East Side Shelter', 
+    type: 'Flood Shelter', 
+    coords: [12.9650, 77.6200] as [number, number],
+    capacity: 400,
+    available: 250,
+    contact: '+91-9876543213'
+  },
 ];
+
+const SAFE_ZONES = RELIEF_CAMPS;
+
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
 const DANGER_ZONES = [
   { id: 'dz1', name: 'Low Elevation Area', type: 'Flood', coords: [12.9600, 77.5800] as [number, number], radius: 500 },
@@ -180,6 +227,20 @@ const CriticalIcon = L.icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   className: 'critical-marker-pulse'
+});
+
+const ReliefCampIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+const ReliefCampFullIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
@@ -580,6 +641,22 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode, trafficSimulati
   const [aiAdvisory, setAiAdvisory] = useState<string | null>(null);
   const [isReachedSafeZone, setIsReachedSafeZone] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [reliefAdvisory, setReliefAdvisory] = useState<string | null>(null);
+
+  const nearestCamps = useMemo(() => {
+    if (!coords) return [];
+    return [...RELIEF_CAMPS]
+      .map(camp => ({
+        ...camp,
+        distance: calculateDistance(coords[0], coords[1], camp.coords[0], camp.coords[1])
+      }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3);
+  }, [coords]);
+
+  const nearestAvailableCamp = useMemo(() => {
+    return nearestCamps.find(c => c.available > 0) || nearestCamps[0];
+  }, [nearestCamps]);
 
   const fetchAiAdvisory = async (type: string, loc: string) => {
     try {
@@ -595,14 +672,33 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode, trafficSimulati
     }
   };
 
+  const fetchReliefAdvisory = async (camp: any) => {
+    if (!camp) return;
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Generate a short advisory for the nearest relief camp: ${camp.name}. It is ${camp.distance.toFixed(1)} km away with ${camp.available} beds available. Mention estimated arrival time (assume 50km/h). Keep it under 25 words.`,
+      });
+      setReliefAdvisory(response.text || null);
+    } catch (error) {
+      console.error("Error fetching relief advisory:", error);
+      setReliefAdvisory(null);
+    }
+  };
+
   useEffect(() => {
     if (disasterMode.active && disasterMode.type && location) {
       fetchAiAdvisory(disasterMode.type, location);
       setIsReachedSafeZone(false);
+      if (nearestAvailableCamp) {
+        fetchReliefAdvisory(nearestAvailableCamp);
+      }
     } else {
       setAiAdvisory(null);
+      setReliefAdvisory(null);
     }
-  }, [disasterMode.active, disasterMode.type, location]);
+  }, [disasterMode.active, disasterMode.type, location, nearestAvailableCamp]);
 
   const DISASTER_INSTRUCTIONS: Record<string, { title: string, steps: string[], alert?: string, icon: any }> = {
     'Flood': {
@@ -1387,6 +1483,56 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode, trafficSimulati
                     </div>
                   )}
 
+                  {/* Nearest Relief Camps Section */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                      <p className="text-xs font-black text-white uppercase tracking-widest">
+                        Nearest Relief Camps
+                      </p>
+                      <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                        Live Tracking
+                      </span>
+                    </div>
+                    
+                    {reliefAdvisory && (
+                      <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-3 flex items-start gap-3">
+                        <BrainCircuit size={14} className="text-emerald-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-slate-300 italic leading-relaxed">"{reliefAdvisory}"</p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-2">
+                      {nearestCamps.map((camp) => (
+                        <div key={camp.id} className={cn(
+                          "p-3 rounded-2xl border transition-all flex items-center justify-between",
+                          camp.available === 0 ? "bg-red-500/5 border-red-500/20" : "bg-white/5 border-white/10 hover:border-emerald-500/30"
+                        )}>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Shield size={12} className={camp.available === 0 ? "text-red-500" : "text-emerald-500"} />
+                              <span className="text-[11px] font-black text-white uppercase tracking-tight">{camp.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-[9px] font-bold text-slate-500 uppercase">
+                              <span>{camp.distance.toFixed(1)} km</span>
+                              <span>•</span>
+                              <span className={camp.available === 0 ? "text-red-400" : "text-emerald-400"}>
+                                {camp.available === 0 ? 'FULL' : `${camp.available} beds available`}
+                              </span>
+                              <span>•</span>
+                              <span>~{Math.round(camp.distance * 1.2)} mins</span>
+                            </div>
+                          </div>
+                          <a 
+                            href={`tel:${camp.contact}`}
+                            className="p-2 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+                          >
+                            <Phone size={14} />
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Expandable Sections */}
                   <div className="space-y-2 pt-2">
                     {[
@@ -1508,16 +1654,53 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode, trafficSimulati
                       />
                     </Marker>
 
-                    {/* Safe Zones */}
-                    {SAFE_ZONES.map(sz => (
-                      <Marker key={sz.id} position={sz.coords} icon={SafeZoneIcon} />
-                    ))}
+                    {/* Relief Camps */}
+                    {RELIEF_CAMPS.map(camp => {
+                      const isNearest = camp.id === nearestAvailableCamp?.id;
+                      const isFull = camp.available === 0;
+                      return (
+                        <Marker 
+                          key={camp.id} 
+                          position={camp.coords} 
+                          icon={isFull ? ReliefCampFullIcon : ReliefCampIcon}
+                        >
+                          <Tooltip direction="top" permanent={isNearest}>
+                            <div className="p-1">
+                              <p className="font-bold text-[8px] uppercase">{camp.name}</p>
+                              <p className="text-[7px] text-slate-500">{camp.type} • {isFull ? 'FULL' : `${camp.available} beds`}</p>
+                            </div>
+                          </Tooltip>
+                          <Popup>
+                            <div className="p-2 space-y-2 min-w-[150px]">
+                              <h4 className="font-black text-[10px] uppercase text-slate-800">{camp.name}</h4>
+                              <div className="space-y-1 text-[9px]">
+                                <p className="flex justify-between"><span className="text-slate-500">Type:</span> <span className="font-bold">{camp.type}</span></p>
+                                {coords && (
+                                  <p className="flex justify-between"><span className="text-slate-500">Distance:</span> <span className="font-bold">{calculateDistance(coords[0], coords[1], camp.coords[0], camp.coords[1]).toFixed(1)} km</span></p>
+                                )}
+                                <p className="flex justify-between"><span className="text-slate-500">Availability:</span> <span className={cn("font-bold", isFull ? "text-red-500" : "text-emerald-500")}>{camp.available}/{camp.capacity}</span></p>
+                                <p className="flex justify-between"><span className="text-slate-500">Contact:</span> <span className="font-bold">{camp.contact}</span></p>
+                              </div>
+                              <button className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest rounded transition-colors">
+                                Navigate to Camp
+                              </button>
+                            </div>
+                          </Popup>
+                        </Marker>
+                      );
+                    })}
 
-                    {/* Evacuation Route if disaster active */}
-                    {disasterMode.active && nearestSafeZone && (
+                    {/* Evacuation Route to nearest available camp */}
+                    {disasterMode.active && nearestAvailableCamp && (
                       <Polyline 
-                        positions={[coords, nearestSafeZone.coords]} 
-                        pathOptions={{ color: '#10b981', weight: 6, opacity: 0.8 }} 
+                        positions={[coords, nearestAvailableCamp.coords]} 
+                        pathOptions={{ 
+                          color: '#10b981', 
+                          weight: 6, 
+                          opacity: 0.8,
+                          dashArray: '10, 10',
+                          className: 'evacuation-route-pulse'
+                        }} 
                       />
                     )}
                   </>
@@ -2251,9 +2434,20 @@ const AdminDashboard = ({
                     />
                   </Marker>
                   
-                  {/* Safe Zones */}
-                  {SAFE_ZONES.map(sz => (
-                    <Marker key={sz.id} position={sz.coords} icon={SafeZoneIcon} />
+                  {/* Relief Camps */}
+                  {RELIEF_CAMPS.map(camp => (
+                    <Marker 
+                      key={camp.id} 
+                      position={camp.coords} 
+                      icon={camp.available === 0 ? ReliefCampFullIcon : ReliefCampIcon}
+                    >
+                      <Tooltip direction="top">
+                        <div className="p-1">
+                          <p className="font-bold text-[8px] uppercase">{camp.name}</p>
+                          <p className="text-[7px] text-slate-500">{camp.type} • {camp.available === 0 ? 'FULL' : `${camp.available} beds`}</p>
+                        </div>
+                      </Tooltip>
+                    </Marker>
                   ))}
                 </>
               )}

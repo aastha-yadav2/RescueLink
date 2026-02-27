@@ -161,11 +161,15 @@
 }
 
 .ambulance-marker {
-  background: #ef4444;
-  border: 2px solid white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+  @apply bg-red-500 border-2 border-white rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.6)];
+}
+
+@keyframes evacuation-route-pulse {
+  0% { stroke-dashoffset: 20; opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0.6; }
+}
+
+.evacuation-route-pulse {
+  animation: evacuation-route-pulse 1.5s linear infinite;
 }
