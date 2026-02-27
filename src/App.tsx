@@ -42,7 +42,11 @@ import {
   Navigation,
   Timer,
   Car,
-  Zap
+  Zap,
+  Wind,
+  ChevronDown,
+  ChevronUp,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -573,6 +577,98 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode, trafficSimulati
   };
 
   const [isTriggered, setIsTriggered] = useState(false);
+  const [aiAdvisory, setAiAdvisory] = useState<string | null>(null);
+  const [isReachedSafeZone, setIsReachedSafeZone] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  const fetchAiAdvisory = async (type: string, loc: string) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Generate a short, location-aware safety advisory for a ${type} in ${loc}. Keep it under 20 words. Focus on immediate action.`,
+      });
+      setAiAdvisory(response.text || null);
+    } catch (error) {
+      console.error("Error fetching AI advisory:", error);
+      setAiAdvisory(null);
+    }
+  };
+
+  useEffect(() => {
+    if (disasterMode.active && disasterMode.type && location) {
+      fetchAiAdvisory(disasterMode.type, location);
+      setIsReachedSafeZone(false);
+    } else {
+      setAiAdvisory(null);
+    }
+  }, [disasterMode.active, disasterMode.type, location]);
+
+  const DISASTER_INSTRUCTIONS: Record<string, { title: string, steps: string[], alert?: string, icon: any }> = {
+    'Flood': {
+      title: 'Flood Safety Guidelines',
+      icon: Waves,
+      steps: [
+        'Move to higher ground immediately.',
+        'Avoid walking or driving through floodwaters.',
+        'Turn off electricity if safe to do so.',
+        'Keep emergency kit ready.',
+        'Follow highlighted green evacuation route.'
+      ],
+      alert: 'Low elevation zones marked in red.'
+    },
+    'Fire': {
+      title: 'Fire Emergency Guidelines',
+      icon: Flame,
+      steps: [
+        'Evacuate building immediately.',
+        'Stay low to avoid smoke inhalation.',
+        'Do not use elevators.',
+        'Cover nose with cloth if smoke present.',
+        'Move toward nearest safe exit route shown in green.'
+      ],
+      alert: 'Avoid red-marked high-risk fire zones.'
+    },
+    'Earthquake': {
+      title: 'Earthquake Safety Guidelines',
+      icon: Mountain,
+      steps: [
+        'Drop, Cover, and Hold On.',
+        'Stay away from windows and heavy objects.',
+        'After shaking stops, evacuate calmly.',
+        'Avoid damaged roads marked in red.',
+        'Proceed to nearest safe open area shown in green.'
+      ],
+      alert: 'Aftershocks possible. Stay alert.'
+    },
+    'Cyclone': {
+      title: 'Cyclone / Storm Safety Guidelines',
+      icon: Wind,
+      steps: [
+        'Stay indoors and away from windows.',
+        'Secure loose objects around you.',
+        'Avoid coastal and low-lying areas.',
+        'Follow evacuation route if instructed.',
+        'Keep emergency contacts informed.'
+      ]
+    },
+    'Generic': {
+      title: 'Emergency Preparedness Instructions',
+      icon: AlertTriangle,
+      steps: [
+        'Stay calm.',
+        'Follow evacuation route.',
+        'Keep phone charged.',
+        'Inform family contacts.',
+        'Await further instructions.'
+      ]
+    }
+  };
+
+  const currentInstructions = disasterMode.active 
+    ? (DISASTER_INSTRUCTIONS[disasterMode.type || 'Generic'] || DISASTER_INSTRUCTIONS['Generic'])
+    : DISASTER_INSTRUCTIONS['Generic'];
+
   const [aiResult, setAiResult] = useState<{ 
     severity: string, 
     confidence: string, 
@@ -1220,56 +1316,149 @@ const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode, trafficSimulati
         </AnimatePresence>
 
         <div className="w-full glass rounded-2xl p-6 space-y-4">
-          {/* Evacuation Instructions Panel */}
+          {/* Dynamic Disaster Instruction Panel */}
           <AnimatePresence>
-            {disasterMode.active && (
+            {disasterMode.active && !isReachedSafeZone && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
+                initial={{ height: 0, opacity: 0, y: 20 }}
+                animate={{ height: 'auto', opacity: 1, y: 0 }}
+                exit={{ height: 0, opacity: 0, y: 20 }}
                 className="overflow-hidden"
               >
-                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-4 space-y-3">
+                <div className="bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-3xl p-5 mb-4 shadow-2xl space-y-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-red-500">
-                      <Navigation size={16} />
-                      <span className="text-xs font-black uppercase tracking-widest">Evacuation Protocol</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-brand-accent/20 flex items-center justify-center text-brand-accent">
+                        <currentInstructions.icon size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black uppercase tracking-widest text-white">
+                          ⚠ Emergency Safety Instructions
+                        </h3>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                          {disasterMode.type} Mode Active
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-white font-mono text-xs">
-                      <Timer size={14} className="text-red-500" />
-                      <span>{evacuationTimer}m REMAINING</span>
+                    <div className="flex flex-col items-end">
+                      <div className="flex items-center gap-2 text-red-500 font-mono text-sm font-black">
+                        <Timer size={16} />
+                        <span>{evacuationTimer}m</span>
+                      </div>
+                      <p className="text-[8px] font-black text-slate-600 uppercase">Remaining</p>
                     </div>
-                  </div>
-                  
-                  {/* Progress Bar */}
-                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: '100%' }}
-                      animate={{ width: `${(evacuationTimer / 15) * 100}%` }}
-                      className="h-full bg-red-500"
-                    />
                   </div>
 
-                  <div className="space-y-2">
-                    {[
-                      "Stay calm and gather essentials",
-                      "Follow green evacuation route on map",
-                      "Avoid marked red danger zones",
-                      "Keep emergency contacts informed",
-                      "Await further instructions at safe zone"
-                    ].map((step, i) => (
-                      <div key={i} className="flex items-start gap-3">
-                        <div className="w-4 h-4 rounded-full bg-red-500/20 flex items-center justify-center text-[8px] font-black text-red-500 shrink-0 mt-0.5">
-                          {i + 1}
+                  {/* AI Advisory Box */}
+                  {aiAdvisory && (
+                    <motion.div 
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="bg-brand-accent/10 border border-brand-accent/20 rounded-2xl p-3 flex items-start gap-3"
+                    >
+                      <BrainCircuit size={16} className="text-brand-accent shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent mb-1">AI Safety Advisory</p>
+                        <p className="text-xs text-slate-200 italic leading-relaxed">"{aiAdvisory}"</p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div className="space-y-3">
+                    <p className="text-xs font-black text-white uppercase tracking-widest border-b border-white/5 pb-2">
+                      {currentInstructions.title}
+                    </p>
+                    <div className="space-y-2.5">
+                      {currentInstructions.steps.map((step, i) => (
+                        <div key={i} className="flex items-start gap-3 group">
+                          <div className="w-5 h-5 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:border-brand-accent/50 group-hover:text-brand-accent transition-all shrink-0 mt-0.5">
+                            {i + 1}
+                          </div>
+                          <p className="text-[11px] text-slate-300 font-medium leading-snug">{step}</p>
                         </div>
-                        <p className="text-[10px] text-slate-300 font-medium leading-tight">{step}</p>
+                      ))}
+                    </div>
+                  </div>
+
+                  {currentInstructions.alert && (
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-2.5 flex items-center gap-2">
+                      <Info size={14} className="text-red-500" />
+                      <p className="text-[10px] font-bold text-red-400 uppercase tracking-tight">{currentInstructions.alert}</p>
+                    </div>
+                  )}
+
+                  {/* Expandable Sections */}
+                  <div className="space-y-2 pt-2">
+                    {[
+                      { id: 'kit', label: 'Emergency Kit Checklist', icon: Shield, content: ['Water (3L/day)', 'Non-perishable Food', 'First Aid Kit', 'Flashlight & Batteries', 'Whistle', 'Face Mask', 'Offline Map', 'Power Bank'] },
+                      { id: 'zones', label: 'Nearby Safe Zones', icon: MapPin, content: SAFE_ZONES.map(sz => `${sz.name} (${sz.type})`) },
+                      { id: 'helplines', label: 'Emergency Helplines', icon: Phone, content: ['112 - All-in-one Emergency', '100 - Police', '101 - Fire', '102 - Ambulance', '108 - Disaster Management'] }
+                    ].map((section) => (
+                      <div key={section.id} className="border border-white/5 rounded-2xl overflow-hidden">
+                        <button 
+                          onClick={() => setExpandedSection(expandedSection === section.id ? null : section.id)}
+                          className="w-full flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 transition-all"
+                        >
+                          <div className="flex items-center gap-2 text-slate-400">
+                            <section.icon size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">{section.label}</span>
+                          </div>
+                          {expandedSection === section.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                        <AnimatePresence>
+                          {expandedSection === section.id && (
+                            <motion.div
+                              initial={{ height: 0 }}
+                              animate={{ height: 'auto' }}
+                              exit={{ height: 0 }}
+                              className="overflow-hidden bg-black/20"
+                            >
+                              <div className="p-3 grid grid-cols-1 gap-1.5">
+                                {section.content.map((item, idx) => (
+                                  <div key={idx} className="flex items-center gap-2">
+                                    <div className="w-1 h-1 rounded-full bg-brand-accent" />
+                                    <span className="text-[10px] text-slate-400">{item}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     ))}
                   </div>
+
+                  <button 
+                    onClick={() => setIsReachedSafeZone(true)}
+                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 size={16} />
+                    I Have Reached Safe Zone
+                  </button>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
+
+          {isReachedSafeZone && disasterMode.active && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-emerald-500/10 border border-emerald-500/20 rounded-3xl p-6 mb-4 text-center space-y-2"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-500 mx-auto mb-2">
+                <CheckCircle2 size={32} />
+              </div>
+              <h3 className="text-lg font-black text-white uppercase tracking-tight">You are Safe</h3>
+              <p className="text-xs text-slate-400">Status updated. Emergency services have been notified of your safety.</p>
+              <button 
+                onClick={() => setIsReachedSafeZone(false)}
+                className="text-[10px] font-black uppercase tracking-widest text-emerald-500 underline mt-2"
+              >
+                View Instructions Again
+              </button>
+            </motion.div>
+          )}
 
           <div className="h-64 rounded-xl overflow-hidden relative border border-white/5">
             <div className="absolute top-4 right-4 z-[1000]">
@@ -1634,7 +1823,8 @@ const AdminDashboard = ({
             {[
               { type: 'Flood', icon: Waves, color: 'text-blue-500', bg: 'bg-blue-500/10' },
               { type: 'Fire', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-              { type: 'Earthquake', icon: Mountain, color: 'text-amber-500', bg: 'bg-amber-500/10' }
+              { type: 'Earthquake', icon: Mountain, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+              { type: 'Cyclone', icon: Wind, color: 'text-cyan-500', bg: 'bg-cyan-500/10' }
             ].map((d) => (
               <button
                 key={d.type}
