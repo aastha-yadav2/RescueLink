@@ -68,24 +68,55 @@ async function startServer() {
     }
   });
 
-  // Store active alerts, history, and active users in memory
+  // Store active alerts, history, active users, and disaster mode in memory
   let alerts: any[] = [];
   let history: any[] = [];
   let activeUsers: Record<string, { location: string, fullAddress?: string | null, lastSeen: string }> = {};
+  let disasterMode = { active: false, type: null as string | null, timestamp: null as string | null };
 
   wss.on("connection", (ws) => {
     console.log("Client connected");
 
-    // Send current alerts, history, and active users to the new client
+    // Send current alerts, history, active users, and disaster mode to the new client
     ws.send(JSON.stringify({ 
       type: "INIT_DATA", 
-      payload: { alerts, history, activeUsers } 
+      payload: { alerts, history, activeUsers, disasterMode } 
     }));
 
     ws.on("message", (data) => {
       try {
         const message = JSON.parse(data.toString());
         
+        if (message.type === "ACTIVATE_DISASTER") {
+          disasterMode = {
+            active: true,
+            type: message.payload.type,
+            timestamp: new Date().toISOString()
+          };
+          
+          const broadcastData = JSON.stringify({ type: "DISASTER_ACTIVATED", payload: disasterMode });
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(broadcastData);
+            }
+          });
+        }
+
+        if (message.type === "DEACTIVATE_DISASTER") {
+          disasterMode = {
+            active: false,
+            type: null,
+            timestamp: null
+          };
+          
+          const broadcastData = JSON.stringify({ type: "DISASTER_DEACTIVATED", payload: disasterMode });
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(broadcastData);
+            }
+          });
+        }
+
         if (message.type === "NEW_ALERT") {
           const newAlert = {
             id: Date.now().toString(),

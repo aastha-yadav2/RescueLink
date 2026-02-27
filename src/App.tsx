@@ -35,12 +35,17 @@ import {
   Settings,
   Phone,
   HeartPulse,
-  MessageSquare
+  MessageSquare,
+  Flame,
+  Waves,
+  Mountain,
+  Navigation,
+  Timer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Tooltip, Circle, Polyline } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -106,6 +111,32 @@ const UserPinIcon = L.icon({
   iconAnchor: [15, 48],
   className: 'user-pin-pulse'
 });
+
+const SafeZoneIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [30, 48],
+  iconAnchor: [15, 48],
+});
+
+const DangerZoneIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+
+const SAFE_ZONES = [
+  { id: 'sz1', name: 'Emergency Shelter A', type: 'Shelter', coords: [12.9716, 77.5946] as [number, number] },
+  { id: 'sz2', name: 'City General Hospital', type: 'Hospital', coords: [12.9850, 77.6100] as [number, number] },
+  { id: 'sz3', name: 'Relief Camp North', type: 'Camp', coords: [13.0000, 77.5800] as [number, number] },
+];
+
+const DANGER_ZONES = [
+  { id: 'dz1', name: 'Low Elevation Area', type: 'Flood', coords: [12.9600, 77.5800] as [number, number], radius: 500 },
+  { id: 'dz2', name: 'Industrial Fire Zone', type: 'Fire', coords: [12.9900, 77.6200] as [number, number], radius: 400 },
+  { id: 'dz3', name: 'Structural Damage Area', type: 'Earthquake', coords: [12.9750, 77.6050] as [number, number], radius: 300 },
+];
 
 const CriticalIcon = L.icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
@@ -410,7 +441,11 @@ const AuthScreen = ({ onLogin }: { onLogin: (user: { name: string, email: string
   );
 };
 
-const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) => void, onLocationUpdate: (location: string, fullAddress: string | null) => void }) => {
+const UserScreen = ({ onTrigger, onLocationUpdate, disasterMode }: { 
+  onTrigger: (data: any) => void, 
+  onLocationUpdate: (location: string, fullAddress: string | null) => void,
+  disasterMode: { active: boolean, type: string | null, timestamp: string | null }
+}) => {
   const [isListening, setIsListening] = useState(false);
   const [location, setLocation] = useState<string>("Locating...");
   const [coords, setCoords] = useState<[number, number] | null>(null);
@@ -487,6 +522,7 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
   const [isRecording, setIsRecording] = useState(false);
   const [isSignLanguageCameraOpen, setIsSignLanguageCameraOpen] = useState(false);
   const [isDetectingSignLanguage, setIsDetectingSignLanguage] = useState(false);
+  const [evacuationTimer, setEvacuationTimer] = useState(15); // 15 minutes default
   const videoRef = useRef<HTMLVideoElement>(null);
   const signLanguageStreamRef = useRef<MediaStream | null>(null);
   const signLanguageIntervalRef = useRef<number | null>(null);
@@ -771,8 +807,52 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
     }, 8000);
   };
 
+  useEffect(() => {
+    if (disasterMode.active) {
+      setEvacuationTimer(15);
+      const interval = setInterval(() => {
+        setEvacuationTimer(prev => Math.max(0, prev - 1));
+      }, 60000); // Decrease every minute
+      return () => clearInterval(interval);
+    }
+  }, [disasterMode.active]);
+
+  const nearestSafeZone = useMemo(() => {
+    if (!coords) return null;
+    return SAFE_ZONES.reduce((prev, curr) => {
+      const dPrev = Math.sqrt(Math.pow(prev.coords[0] - coords[0], 2) + Math.pow(prev.coords[1] - coords[1], 2));
+      const dCurr = Math.sqrt(Math.pow(curr.coords[0] - coords[0], 2) + Math.pow(curr.coords[1] - coords[1], 2));
+      return dCurr < dPrev ? curr : prev;
+    });
+  }, [coords]);
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-[85vh] space-y-8 p-6">
+    <div className="flex flex-col items-center justify-center min-h-[85vh] space-y-8 p-6 relative">
+      {/* Disaster Banner */}
+      <AnimatePresence>
+        {disasterMode.active && (
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="fixed top-0 left-0 right-0 z-[2000] bg-red-600 text-white py-4 px-8 shadow-2xl overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-red-500 animate-pulse opacity-50" />
+            <div className="relative flex flex-col items-center justify-center text-center">
+              <div className="flex items-center gap-3 mb-1">
+                <AlertTriangle className="animate-bounce" size={24} />
+                <h2 className="text-xl font-black uppercase tracking-tighter">
+                  🚨 EMERGENCY ALERT ISSUED – {disasterMode.type}
+                </h2>
+              </div>
+              <p className="text-xs font-bold uppercase tracking-widest opacity-90">
+                Please follow evacuation instructions immediately.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="text-center space-y-2">
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
@@ -1079,20 +1159,113 @@ const UserScreen = ({ onTrigger, onLocationUpdate }: { onTrigger: (data: any) =>
         </AnimatePresence>
 
         <div className="w-full glass rounded-2xl p-6 space-y-4">
+          {/* Evacuation Instructions Panel */}
+          <AnimatePresence>
+            {disasterMode.active && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-red-500">
+                      <Navigation size={16} />
+                      <span className="text-xs font-black uppercase tracking-widest">Evacuation Protocol</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-white font-mono text-xs">
+                      <Timer size={14} className="text-red-500" />
+                      <span>{evacuationTimer}m REMAINING</span>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: '100%' }}
+                      animate={{ width: `${(evacuationTimer / 15) * 100}%` }}
+                      className="h-full bg-red-500"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      "Stay calm and gather essentials",
+                      "Follow green evacuation route on map",
+                      "Avoid marked red danger zones",
+                      "Keep emergency contacts informed",
+                      "Await further instructions at safe zone"
+                    ].map((step, i) => (
+                      <div key={i} className="flex items-start gap-3">
+                        <div className="w-4 h-4 rounded-full bg-red-500/20 flex items-center justify-center text-[8px] font-black text-red-500 shrink-0 mt-0.5">
+                          {i + 1}
+                        </div>
+                        <p className="text-[10px] text-slate-300 font-medium leading-tight">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="h-48 rounded-xl overflow-hidden relative border border-white/5">
             {coords ? (
               <MapContainer 
                 center={coords} 
-                zoom={15} 
+                zoom={disasterMode.active ? 16 : 15} 
                 style={{ height: '100%', width: '100%' }}
                 zoomControl={false}
-                dragging={false}
+                dragging={!disasterMode.active}
                 scrollWheelZoom={false}
               >
                 <TileLayer
                   url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                 />
                 <Marker position={coords} icon={UserPinIcon} />
+
+                {/* Disaster Simulation Map Elements */}
+                {disasterMode.active && (
+                  <>
+                    {/* Safe Zones */}
+                    {SAFE_ZONES.map(sz => (
+                      <Marker key={sz.id} position={sz.coords} icon={SafeZoneIcon}>
+                        <Tooltip permanent direction="top" offset={[0, -20]}>
+                          <div className="text-[8px] font-black uppercase tracking-tighter">{sz.name}</div>
+                        </Tooltip>
+                      </Marker>
+                    ))}
+
+                    {/* Danger Zones */}
+                    {DANGER_ZONES.map(dz => (
+                      <React.Fragment key={dz.id}>
+                        <Circle 
+                          center={dz.coords} 
+                          radius={dz.radius} 
+                          pathOptions={{ 
+                            color: 'red', 
+                            fillColor: 'red', 
+                            fillOpacity: 0.2,
+                            dashArray: disasterMode.type === 'Fire' ? '5, 10' : undefined,
+                            className: 'danger-zone-pulse'
+                          }} 
+                        />
+                        <Marker position={dz.coords} icon={DangerZoneIcon} />
+                      </React.Fragment>
+                    ))}
+
+                    {/* Evacuation Route (Mock) */}
+                    {nearestSafeZone && (
+                      <Polyline 
+                        positions={[coords, nearestSafeZone.coords]} 
+                        pathOptions={{ color: '#10b981', weight: 6, opacity: 0.8, lineCap: 'round' }} 
+                      >
+                        <Tooltip sticky>Evacuation Route</Tooltip>
+                      </Polyline>
+                    )}
+                  </>
+                )}
 
               </MapContainer>
             ) : (
@@ -1153,14 +1326,20 @@ const AdminDashboard = ({
   activeUsers,
   onAccept, 
   onReject, 
-  onResolve 
+  onResolve,
+  disasterMode,
+  onActivateDisaster,
+  onDeactivateDisaster
 }: { 
   alerts: Alert[], 
   history: Alert[], 
   activeUsers: Record<string, { location: string, fullAddress?: string | null, lastSeen: string }>,
   onAccept: (id: string) => void, 
   onReject: (id: string) => void,
-  onResolve: (id: string) => void
+  onResolve: (id: string) => void,
+  disasterMode: { active: boolean, type: string | null, timestamp: string | null },
+  onActivateDisaster: (type: string) => void,
+  onDeactivateDisaster: () => void
 }) => {
   const MapUpdater = ({ coords, zoom }: { coords: [number, number] | null, zoom: number }) => {
     const map = useMap();
@@ -1280,6 +1459,93 @@ const AdminDashboard = ({
               <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Avg Response</p>
               <p className="text-xl font-mono font-bold">01:12s</p>
             </div>
+          </div>
+          {disasterMode.active && (
+            <div className="glass px-6 py-3 rounded-2xl flex items-center gap-4 border-l-4 border-l-red-600">
+              <div className="w-10 h-10 rounded-xl bg-red-600/10 flex items-center justify-center">
+                <AlertTriangle size={20} className="text-red-600 animate-pulse" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-red-600 font-black">Disaster Active</p>
+                <p className="text-xl font-black text-white">{disasterMode.type}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Disaster Simulation Controls */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="glass p-6 rounded-3xl space-y-4">
+          <div className="flex items-center gap-2 text-slate-400 mb-2">
+            <Radio size={16} />
+            <span className="text-[10px] font-black uppercase tracking-widest">Disaster Simulation</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            {[
+              { type: 'Flood', icon: Waves, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+              { type: 'Fire', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+              { type: 'Earthquake', icon: Mountain, color: 'text-amber-500', bg: 'bg-amber-500/10' }
+            ].map((d) => (
+              <button
+                key={d.type}
+                onClick={() => onActivateDisaster(d.type)}
+                disabled={disasterMode.active}
+                className={cn(
+                  "flex items-center justify-between p-3 rounded-xl border transition-all",
+                  disasterMode.type === d.type 
+                    ? "bg-red-600 border-red-500 text-white" 
+                    : "bg-slate-900/50 border-white/5 text-slate-400 hover:border-white/20 disabled:opacity-50"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={cn("p-2 rounded-lg", d.bg, d.color)}>
+                    <d.icon size={16} />
+                  </div>
+                  <span className="text-xs font-black uppercase tracking-widest">{d.type} Mode</span>
+                </div>
+                {!disasterMode.active && <Plus size={14} />}
+              </button>
+            ))}
+            {disasterMode.active && (
+              <button
+                onClick={onDeactivateDisaster}
+                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all"
+              >
+                Deactivate Disaster
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="glass p-6 rounded-3xl flex flex-col justify-center">
+          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Users Affected</p>
+          <p className="text-4xl font-black text-white">
+            {disasterMode.active ? Object.keys(activeUsers).length : 0}
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">Real-time GPS Tracking</span>
+          </div>
+        </div>
+
+        <div className="glass p-6 rounded-3xl flex flex-col justify-center">
+          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Avg Evacuation Time</p>
+          <p className="text-4xl font-black text-white">
+            {disasterMode.active ? "8.4m" : "--"}
+          </p>
+          <div className="flex items-center gap-2 mt-2 text-emerald-500">
+            <Activity size={10} />
+            <span className="text-[8px] font-black uppercase tracking-widest">Optimized Routes</span>
+          </div>
+        </div>
+
+        <div className="glass p-6 rounded-3xl flex flex-col justify-center">
+          <p className="text-[10px] uppercase tracking-widest text-slate-500 font-black mb-1">Active Safe Zones</p>
+          <p className="text-4xl font-black text-white">{SAFE_ZONES.length}</p>
+          <div className="flex items-center gap-2 mt-2 text-blue-500">
+            <Shield size={10} />
+            <span className="text-[8px] font-black uppercase tracking-widest">Capacity: 85%</span>
           </div>
         </div>
       </div>
@@ -1559,6 +1825,42 @@ const AdminDashboard = ({
                   attribution='&copy; Traffic Data via OSM Transport'
                 />
               )}
+
+              {/* Disaster Visualization Heatmap */}
+              {disasterMode.active && DANGER_ZONES.map(dz => (
+                <React.Fragment key={dz.id}>
+                  <Circle 
+                    center={dz.coords} 
+                    radius={dz.radius * 2} 
+                    pathOptions={{ 
+                      color: 'transparent', 
+                      fillColor: 'red', 
+                      fillOpacity: 0.1 
+                    }} 
+                  />
+                  <Circle 
+                    center={dz.coords} 
+                    radius={dz.radius} 
+                    pathOptions={{ 
+                      color: 'red', 
+                      fillColor: 'red', 
+                      fillOpacity: 0.2,
+                      weight: 1,
+                      className: 'danger-zone-pulse'
+                    }} 
+                  />
+                </React.Fragment>
+              ))}
+
+              {/* Safe Zones */}
+              {disasterMode.active && SAFE_ZONES.map(sz => (
+                <Marker key={sz.id} position={sz.coords} icon={SafeZoneIcon}>
+                  <Tooltip direction="top">
+                    <div className="text-[10px] font-black uppercase tracking-widest">{sz.name}</div>
+                  </Tooltip>
+                </Marker>
+              ))}
+
               <MarkerClusterGroup
                 chunkedLoading
                 maxClusterRadius={50}
@@ -1750,6 +2052,7 @@ export default function App() {
   const [history, setHistory] = useState<Alert[]>([]);
   const [activeUsers, setActiveUsers] = useState<Record<string, { location: string, fullAddress?: string | null, lastSeen: string }>>({});
   const [newAlertNotification, setNewAlertNotification] = useState<Alert | null>(null);
+  const [disasterMode, setDisasterMode] = useState<{ active: boolean, type: string | null, timestamp: string | null }>({ active: false, type: null, timestamp: null });
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -1777,6 +2080,7 @@ export default function App() {
         setAlerts(message.payload.alerts);
         setHistory(message.payload.history);
         setActiveUsers(message.payload.activeUsers || {});
+        if (message.payload.disasterMode) setDisasterMode(message.payload.disasterMode);
       } else if (message.type === 'ALERT_CREATED') {
         setAlerts(prev => [message.payload, ...prev]);
       } else if (message.type === 'ALERT_UPDATED') {
@@ -1789,6 +2093,10 @@ export default function App() {
         const { userId, location, fullAddress, activeUsers: updatedUsers } = message.payload;
         setAlerts(prev => prev.map(a => a.userId === userId ? { ...a, location, fullAddress } : a));
         if (updatedUsers) setActiveUsers(updatedUsers);
+      } else if (message.type === 'DISASTER_ACTIVATED') {
+        setDisasterMode(message.payload);
+      } else if (message.type === 'DISASTER_DEACTIVATED') {
+        setDisasterMode(message.payload);
       }
     };
 
@@ -1910,6 +2218,18 @@ export default function App() {
     }
   };
 
+  const activateDisaster = (type: string) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'ACTIVATE_DISASTER', payload: { type } }));
+    }
+  };
+
+  const deactivateDisaster = () => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'DEACTIVATE_DISASTER' }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-brand-dark overflow-x-hidden selection:bg-brand-accent/30">
       {/* Navigation */}
@@ -1988,7 +2308,11 @@ export default function App() {
                 exit={{ opacity: 0, scale: 1.02 }}
                 transition={{ type: "spring", damping: 20, stiffness: 100 }}
               >
-                <UserScreen onTrigger={triggerAlert} onLocationUpdate={updateLocation} />
+                <UserScreen 
+                  onTrigger={triggerAlert} 
+                  onLocationUpdate={updateLocation} 
+                  disasterMode={disasterMode}
+                />
               </motion.div>
             ) : (
               <motion.div
@@ -2005,6 +2329,9 @@ export default function App() {
                   onAccept={acceptAlert} 
                   onReject={rejectAlert} 
                   onResolve={resolveAlert}
+                  disasterMode={disasterMode}
+                  onActivateDisaster={activateDisaster}
+                  onDeactivateDisaster={deactivateDisaster}
                 />
               </motion.div>
             )}
